@@ -1,0 +1,17 @@
+{
+  "name": "Silicon Sorcerer — QR Quest",
+  "short_name": "QR Quest",
+  "start_url": "/register",
+  "display": "standalone",
+  "background_color": "#090d16",
+  "theme_color": "#4f46e5",
+  "description": "Live College Tech Quiz & QR Quest Competition Arena",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -31,25 +31,45 @@ export function StatusBadge({ status }) {
   );
 }
 
-export function TimerCircle({ remainingMs, totalMs }) {
-  const radius = 54;
+export function TimerCircle({ remainingMs, totalMs, compact = false }) {
+  const radius = compact ? 36 : 48;
+  const size = compact ? 88 : 116;
+  const strokeWidth = compact ? 6 : 7;
   const circumference = 2 * Math.PI * radius;
   const pct = totalMs > 0 ? Math.max(0, remainingMs / totalMs) : 0;
   const offset = circumference * (1 - pct);
   const secs = Math.ceil(remainingMs / 1000);
-  const isDanger = secs <= 10;
-  const isWarning = secs <= 20 && !isDanger;
+  const isDanger = secs <= 5;
+  const isWarning = secs <= 15 && !isDanger;
 
-  const strokeColor = isDanger ? '#ef4444' : isWarning ? '#f59e0b' : '#4f46e5';
+  const strokeColor = isDanger ? '#ef4444' : isWarning ? '#f59e0b' : '#6366f1';
+  const filterGlow = isDanger
+    ? 'drop-shadow(0 0 8px rgba(239, 68, 68, 0.75))'
+    : isWarning
+    ? 'drop-shadow(0 0 6px rgba(245, 158, 11, 0.6))'
+    : 'drop-shadow(0 0 6px rgba(99, 102, 241, 0.5))';
 
   return (
-    <div style={{ position: 'relative', width: 130, height: 130, margin: '0 auto' }}>
-      <svg width="130" height="130" style={{ transform: 'rotate(-90deg)' }}>
-        <circle cx="65" cy="65" r={radius} fill="none" stroke="#e2e8f0" strokeWidth="8" />
+    <div
+      className={`timer-wrapper${isDanger ? ' timer-pulse' : ''}`}
+      style={{ position: 'relative', width: size, height: size, margin: '0 auto', filter: filterGlow }}
+    >
+      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
         <circle
-          cx="65" cy="65" r={radius} fill="none"
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="rgba(255, 255, 255, 0.1)"
+          strokeWidth={strokeWidth}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
           stroke={strokeColor}
-          strokeWidth="8"
+          strokeWidth={strokeWidth}
           strokeDasharray={circumference}
           strokeDashoffset={offset}
           strokeLinecap="round"
@@ -64,8 +84,17 @@ export function TimerCircle({ remainingMs, totalMs }) {
         color: strokeColor,
         fontFamily: 'var(--font-display)',
       }}>
-        <span style={{ fontSize: 34, fontWeight: 800, lineHeight: 1 }}>{secs}</span>
-        <span style={{ fontSize: 11, color: 'var(--clr-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 2 }}>seconds</span>
+        <span style={{ fontSize: compact ? 24 : 32, fontWeight: 800, lineHeight: 1 }}>{secs}</span>
+        <span style={{
+          fontSize: compact ? 9 : 10,
+          color: 'var(--clr-text-muted)',
+          fontWeight: 700,
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+          marginTop: 2,
+        }}>
+          sec
+        </span>
       </div>
     </div>
   );
@@ -193,3 +222,151 @@ export function CheatingAlertBanner({ alert, onDismiss }) {
     </div>
   );
 }
+
+// ─── iPhone / Mobile Fullscreen Helper Modal / Guide ───────────────
+export function IPhoneFullscreenHelper({ isOpen, onClose }) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="modal-backdrop" onClick={onClose} style={{ zIndex: 3000 }}>
+      <div
+        className="glass-card ios-helper-modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          maxWidth: 440,
+          width: '92%',
+          padding: '28px 24px',
+          textAlign: 'center',
+          border: '1px solid rgba(255, 255, 255, 0.15)',
+          background: 'rgba(15, 23, 42, 0.96)',
+          color: '#ffffff',
+          borderRadius: 24,
+          boxShadow: '0 25px 60px rgba(0,0,0,0.7)',
+        }}
+      >
+        <div style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 58,
+          height: 58,
+          borderRadius: 16,
+          background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
+          color: '#fff',
+          marginBottom: 16,
+          boxShadow: '0 8px 24px rgba(79, 70, 229, 0.4)',
+        }}>
+          <Icons.Smartphone size={30} />
+        </div>
+
+        <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 8, color: '#ffffff' }}>
+          Full Screen Mode for iPhone
+        </h3>
+        <p style={{ fontSize: 13.5, color: '#94a3b8', lineHeight: 1.5, marginBottom: 20 }}>
+          Apple Safari blocks standard web fullscreen. For a 100% immersive, app-like screen without Safari address or bottom bars:
+        </p>
+
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+          textAlign: 'left',
+          marginBottom: 24,
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 14,
+            background: 'rgba(255, 255, 255, 0.05)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            padding: '12px 14px',
+            borderRadius: 14,
+          }}>
+            <div style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              background: '#38bdf8',
+              color: '#0f172a',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 800,
+              fontSize: 14,
+              flexShrink: 0,
+            }}>
+              1
+            </div>
+            <div>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: 6 }}>
+                Tap the Share Button <Icons.Share size={15} color="#38bdf8" />
+              </div>
+              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
+                Found at the bottom center of your Safari browser bar.
+              </div>
+            </div>
+          </div>
+
+          <div style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 14,
+            background: 'rgba(255, 255, 255, 0.05)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            padding: '12px 14px',
+            borderRadius: 14,
+          }}>
+            <div style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              background: '#818cf8',
+              color: '#0f172a',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 800,
+              fontSize: 14,
+              flexShrink: 0,
+            }}>
+              2
+            </div>
+            <div>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: '#f8fafc' }}>
+                Select "Add to Home Screen"
+              </div>
+              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
+                Tap "Add" in top right. Then launch QR Quest from your Home Screen!
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button
+          className="btn btn-primary btn-full btn-lg"
+          onClick={onClose}
+          style={{
+            background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
+            border: 'none',
+            color: '#fff',
+            fontWeight: 700,
+          }}
+        >
+          Got It, Continue Playing
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Compact iPhone Prompt Banner ──────────────────────────────────
+export function IPhoneBannerPrompt({ onOpenGuide }) {
+  return (
+    <button type="button" className="ios-pill-banner" onClick={onOpenGuide}>
+      <span className="ios-pill-icon"><Icons.Smartphone size={13} /></span>
+      <span>iPhone user? Tap for <strong>True Fullscreen</strong> tip</span>
+      <Icons.ChevronRight size={13} />
+    </button>
+  );
+}
+

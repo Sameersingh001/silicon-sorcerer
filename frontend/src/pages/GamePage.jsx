@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { API_BASE, getParticipantSession, clearParticipantSession, apiFetch, fmtMs } from '../utils';
 import { useToast, useCountdown } from '../hooks';
-import { Toast, Spinner, TimerCircle } from '../components';
+import { Toast, Spinner, TimerCircle, IPhoneFullscreenHelper, IPhoneBannerPrompt } from '../components';
 import { Icons } from '../Icons';
 
 const PHASE = {
@@ -30,10 +30,21 @@ export default function GamePage() {
   const [lastResult, setLastResult] = useState(null);
   const [roundLeaderboard, setRoundLeaderboard] = useState([]);
   const [connected, setConnected] = useState(false);
+  const [showIosGuide, setShowIosGuide] = useState(false);
 
   // Anti-cheat warning state
   const [cheatWarning, setCheatWarning] = useState(null);
   const [warningCount, setWarningCount] = useState(0);
+
+  // Check iOS device & standalone status
+  const isIOS = typeof navigator !== 'undefined' && (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
+  const isStandalone = typeof window !== 'undefined' && (
+    window.navigator.standalone === true ||
+    window.matchMedia('(display-mode: standalone)').matches
+  );
 
   const remaining = useCountdown(
     phase === PHASE.QUESTION ? question?.deadlineAt : null,
@@ -137,7 +148,6 @@ export default function GamePage() {
     socket.on('game:started', () => {
       setPhase(PHASE.WAITING);
       showToast('The Quiz has officially started! Get ready...', 'info');
-      // Lock into fullscreen
       try {
         if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
           document.documentElement.requestFullscreen().catch(() => {});
@@ -153,12 +163,12 @@ export default function GamePage() {
       setPhase(PHASE.QUESTION);
       setLastResult(null);
 
-      // Re-enter fullscreen if lost
       try {
         if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
           document.documentElement.requestFullscreen().catch(() => {});
         }
       } catch {}
+      try { window.scrollTo(0, 1); } catch {}
     });
 
     socket.on('round:closed', () => {
@@ -230,10 +240,19 @@ export default function GamePage() {
     submitAnswer(opt);
   };
 
-  const requestFullscreen = () => {
+  const toggleFullscreen = () => {
+    if (isIOS) {
+      if (!isStandalone) {
+        setShowIosGuide(true);
+      }
+      try { window.scrollTo(0, 1); } catch {}
+      return;
+    }
     try {
-      if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-        document.documentElement.requestFullscreen().catch(() => {});
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen?.().catch(() => {});
+      } else {
+        document.exitFullscreen?.().catch(() => {});
       }
     } catch {}
   };
@@ -243,25 +262,29 @@ export default function GamePage() {
     if (!cheatWarning) return null;
     return (
       <div className="cheat-warning-overlay">
-        <div style={{ background: '#ffffff', color: '#b91c1c', padding: 20, borderRadius: '50%', marginBottom: 16 }}>
-          <Icons.ShieldAlert size={48} />
+        <div style={{
+          background: '#ffffff', color: '#b91c1c', padding: 18, borderRadius: '50%',
+          marginBottom: 16, boxShadow: '0 0 30px rgba(0,0,0,0.4)',
+        }}>
+          <Icons.ShieldAlert size={44} />
         </div>
-        <h2 style={{ fontSize: 26, fontWeight: 800, marginBottom: 10 }}>
+        <h2 style={{ fontSize: 'clamp(22px, 5vw, 28px)', fontWeight: 800, marginBottom: 8, color: '#fff' }}>
           Anti-Cheat Warning!
         </h2>
-        <p style={{ fontSize: 16, maxWidth: 460, marginBottom: 8, lineHeight: 1.5 }}>
+        <p style={{ fontSize: 15, maxWidth: 440, marginBottom: 8, lineHeight: 1.5, opacity: 0.95 }}>
           {cheatWarning.reason}
         </p>
-        <p style={{ fontSize: 14, opacity: 0.9, marginBottom: 24 }}>
-          This event has been logged and reported directly to the quiz proctors.
+        <p style={{ fontSize: 13, opacity: 0.85, marginBottom: 20 }}>
+          This event has been logged and reported directly to the quiz proctor.
         </p>
         <div style={{
-          background: 'rgba(255,255,255,0.2)',
-          padding: '8px 18px',
-          borderRadius: '999px',
-          fontWeight: 700,
-          fontSize: 15,
-          marginBottom: 28,
+          background: 'rgba(255,255,255,0.22)',
+          padding: '8px 20px',
+          borderRadius: 999,
+          fontWeight: 800,
+          fontSize: 14,
+          marginBottom: 24,
+          border: '1px solid rgba(255,255,255,0.3)',
         }}>
           Warning {warningCount} of 3 {warningCount >= 3 ? '(DISQUALIFIED)' : ''}
         </div>
@@ -269,9 +292,9 @@ export default function GamePage() {
           className="btn btn-secondary btn-lg"
           onClick={() => {
             setCheatWarning(null);
-            requestFullscreen();
+            toggleFullscreen();
           }}
-          style={{ background: '#ffffff', color: '#b91c1c', border: 'none', fontWeight: 700 }}
+          style={{ background: '#ffffff', color: '#b91c1c', border: 'none', fontWeight: 800, borderRadius: 14 }}
         >
           Return to Locked Quiz Arena
         </button>
@@ -288,42 +311,78 @@ export default function GamePage() {
       <div className="fullscreen-arena">
         <Toast toast={toast} />
         {renderCheatWarning()}
+        <IPhoneFullscreenHelper isOpen={showIosGuide} onClose={() => setShowIosGuide(false)} />
 
         {/* Top Arena Header */}
         <div className="arena-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span className="badge badge-primary">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span className="badge badge-primary" style={{ fontSize: 12, padding: '5px 10px', background: 'rgba(79, 70, 229, 0.3)', border: '1px solid rgba(99, 102, 241, 0.4)' }}>
               Round {question.roundNumber} of {question.totalRounds}
             </span>
             {question.category && (
-              <span className="badge badge-purple">{question.category}</span>
+              <span className="badge badge-purple" style={{ fontSize: 11.5, padding: '5px 10px' }}>
+                {question.category}
+              </span>
             )}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="badge badge-neutral" style={{ fontSize: 12 }}>
-              <Icons.Lock size={12} /> Screen Locked
-            </span>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {isStandalone ? (
+              <span className="badge badge-success" style={{ fontSize: 11 }}>
+                <Icons.Lock size={11} /> Standalone
+              </span>
+            ) : isIOS ? (
+              <button
+                type="button"
+                onClick={() => setShowIosGuide(true)}
+                className="btn btn-sm"
+                style={{
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  color: '#38bdf8',
+                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                  padding: '5px 10px',
+                  fontSize: 11.5,
+                  borderRadius: 8,
+                }}
+              >
+                <Icons.Smartphone size={13} />
+                <span>iPhone Tip</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={toggleFullscreen}
+                className="btn btn-sm"
+                style={{
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  color: '#e2e8f0',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  padding: '5px 10px',
+                  fontSize: 11.5,
+                  borderRadius: 8,
+                }}
+              >
+                <Icons.Maximize size={13} />
+                <span>Fullscreen</span>
+              </button>
+            )}
           </div>
         </div>
 
         {/* Central Question Card */}
         <div className="arena-card fade-in">
-          {/* Timer Display */}
+          {/* Animated Glowing Timer */}
           <div style={{ textAlign: 'center' }}>
             <TimerCircle
               remainingMs={remaining}
               totalMs={question.timeLimitSeconds * 1000}
+              compact={false}
             />
           </div>
 
           {/* Question Text */}
           <div style={{ textAlign: 'center' }}>
-            <h2 style={{
-              fontSize: 'clamp(20px, 4vw, 30px)',
-              fontWeight: 800,
-              color: 'var(--clr-text-h)',
-              lineHeight: 1.35,
-            }}>
+            <h2 className="question-heading">
               {question.questionText}
             </h2>
           </div>
@@ -338,19 +397,24 @@ export default function GamePage() {
                   <button
                     key={idx}
                     type="button"
-                    className={`option-btn${isSelected ? ' selected' : ''}`}
+                    className={`option-btn opt-${idx % 4}${isSelected ? ' selected' : ''}`}
                     onClick={() => handleSelectOption(opt)}
                     disabled={submitting}
                   >
                     <span className="option-letter">{letter}</span>
-                    <span style={{ flex: 1 }}>{opt}</span>
+                    <span style={{ flex: 1, wordBreak: 'break-word' }}>{opt}</span>
+                    {isSelected && (
+                      <span style={{ display: 'inline-flex', color: '#fff', marginLeft: 4 }}>
+                        <Icons.Check size={18} />
+                      </span>
+                    )}
                   </button>
                 );
               })}
             </div>
           ) : (
             /* Fallback Text Input */
-            <form onSubmit={(e) => { e.preventDefault(); submitAnswer(); }} style={{ display: 'flex', gap: 12 }}>
+            <form onSubmit={(e) => { e.preventDefault(); submitAnswer(); }} style={{ display: 'flex', gap: 10 }}>
               <input
                 type="text"
                 className="input-field"
@@ -359,6 +423,7 @@ export default function GamePage() {
                 onChange={(e) => setTextAnswer(e.target.value)}
                 disabled={submitting}
                 autoFocus
+                style={{ background: 'rgba(255,255,255,0.06)', color: '#fff', borderColor: 'rgba(255,255,255,0.2)' }}
               />
               <button type="submit" className="btn btn-primary" disabled={submitting || !textAnswer.trim()}>
                 {submitting ? <Spinner size="sm" /> : 'Submit'}
@@ -366,12 +431,17 @@ export default function GamePage() {
             </form>
           )}
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--clr-border)', paddingTop: 16 }}>
-            <span style={{ fontSize: 13, color: 'var(--clr-text)' }}>
-              Participant: <strong>{session?.fullName}</strong>
+          {/* Arena Footer Info */}
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: 12, marginTop: 4,
+            fontSize: 12.5, color: '#94a3b8',
+          }}>
+            <span>
+              Player: <strong style={{ color: '#f8fafc' }}>{session?.fullName}</strong>
             </span>
-            <span style={{ fontSize: 13, color: 'var(--clr-primary)', fontWeight: 600 }}>
-              Tap an option to lock answer
+            <span style={{ color: '#818cf8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Icons.Zap size={14} color="#818cf8" /> Tap option to lock
             </span>
           </div>
         </div>
@@ -382,32 +452,42 @@ export default function GamePage() {
   // ── Render: SUBMITTED (WAITING FOR ROUND END) ─────────────────────
   if (phase === PHASE.SUBMITTED) {
     return (
-      <div className="page">
+      <div className="page" style={{ background: '#090d16', color: '#f8fafc' }}>
         <Toast toast={toast} />
         {renderCheatWarning()}
 
-        <div className="glass-card" style={{ maxWidth: 480, width: '100%', padding: 40, textAlign: 'center' }}>
+        <div
+          className="glass-card fade-in"
+          style={{
+            maxWidth: 440, width: '100%', padding: 'clamp(28px, 6vw, 44px)', textAlign: 'center',
+            background: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: 24, boxShadow: '0 25px 60px rgba(0,0,0,0.6)',
+          }}
+        >
           <div style={{
-            display: 'inline-flex', padding: 20, background: '#ecfdf5',
-            color: '#10b981', borderRadius: '50%', marginBottom: 20,
+            display: 'inline-flex', padding: 18, background: 'rgba(16, 185, 129, 0.15)',
+            color: '#10b981', borderRadius: '50%', marginBottom: 18,
+            border: '2px solid rgba(16, 185, 129, 0.3)',
+            boxShadow: '0 0 25px rgba(16, 185, 129, 0.35)',
           }}>
             <Icons.CheckCircle size={44} />
           </div>
-          <h2 style={{ fontSize: 24, marginBottom: 8, color: 'var(--clr-text-h)' }}>
+
+          <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8, color: '#ffffff' }}>
             Answer Locked & Submitted!
           </h2>
-          <p style={{ fontSize: 14, color: 'var(--clr-text)', marginBottom: 24, lineHeight: 1.6 }}>
-            Waiting for other participants and for the timer to expire. Round results and standings will appear automatically.
+          <p style={{ fontSize: 13.5, color: '#94a3b8', marginBottom: 24, lineHeight: 1.6 }}>
+            Your response has been timestamped and sent to the host. Stand by while other participants finish this round.
           </p>
 
           <div style={{
-            background: 'var(--clr-surface-2)', padding: '14px 18px',
-            borderRadius: 'var(--radius-md)', border: '1px solid var(--clr-border)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+            background: 'rgba(255, 255, 255, 0.05)', padding: '12px 16px',
+            borderRadius: 14, border: '1px solid rgba(255, 255, 255, 0.08)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
           }}>
-            <Icons.Lock size={16} color="var(--clr-primary)" />
-            <span style={{ fontSize: 13, color: 'var(--clr-text-2)', fontWeight: 500 }}>
-              Screen remains locked in proctored mode.
+            <Icons.Lock size={15} color="#818cf8" />
+            <span style={{ fontSize: 12.5, color: '#cbd5e1', fontWeight: 600 }}>
+              Device remains locked in proctored mode
             </span>
           </div>
         </div>
@@ -418,52 +498,61 @@ export default function GamePage() {
   // ── Render: ROUND RESULT ─────────────────────────────────────────
   if (phase === PHASE.ROUND_RESULT) {
     return (
-      <div className="page">
+      <div className="page" style={{ background: '#090d16', color: '#f8fafc' }}>
         <Toast toast={toast} />
 
-        <div className="glass-card" style={{ maxWidth: 540, width: '100%', padding: 36 }}>
+        <div
+          className="glass-card fade-in"
+          style={{
+            maxWidth: 480, width: '100%', padding: 'clamp(24px, 5vw, 36px)',
+            background: 'rgba(15, 23, 42, 0.92)', border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: 24, boxShadow: '0 25px 60px rgba(0,0,0,0.6)',
+          }}
+        >
           {/* Result Banner */}
-          <div style={{ textAlign: 'center', marginBottom: 28 }}>
+          <div style={{ textAlign: 'center', marginBottom: 24 }}>
             <div style={{
               display: 'inline-flex', padding: 18,
-              background: lastResult?.isCorrect ? '#ecfdf5' : '#fef2f2',
+              background: lastResult?.isCorrect ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
               color: lastResult?.isCorrect ? '#10b981' : '#ef4444',
               borderRadius: '50%', marginBottom: 14,
+              border: `2px solid ${lastResult?.isCorrect ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)'}`,
+              boxShadow: `0 0 25px ${lastResult?.isCorrect ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
             }}>
               {lastResult?.isCorrect ? <Icons.CheckCircle size={40} /> : <Icons.XCircle size={40} />}
             </div>
-            <h2 style={{ fontSize: 24, color: lastResult?.isCorrect ? '#059669' : '#dc2626', marginBottom: 6 }}>
+            <h2 style={{ fontSize: 24, fontWeight: 800, color: lastResult?.isCorrect ? '#34d399' : '#f87171', marginBottom: 6 }}>
               {lastResult?.isCorrect ? 'Correct Answer!' : 'Incorrect or Missed'}
             </h2>
-            <p style={{ fontSize: 14, color: 'var(--clr-text)' }}>
+            <p style={{ fontSize: 13.5, color: '#94a3b8' }}>
               {lastResult?.isCorrect
                 ? `+${lastResult.pointsAwarded} points awarded in ${fmtMs(lastResult.responseTimeMs)}!`
                 : 'No points awarded for this round.'}
             </p>
           </div>
 
-          {/* Main Projector Screen Callout */}
+          {/* Projector Callout Card */}
           <div style={{
-            background: 'var(--clr-primary-light)',
-            border: '2px dashed #818cf8',
-            borderRadius: 'var(--radius-lg)',
-            padding: '24px 20px',
+            background: 'linear-gradient(135deg, rgba(79, 70, 229, 0.2) 0%, rgba(124, 58, 237, 0.15) 100%)',
+            border: '2px dashed rgba(129, 140, 248, 0.4)',
+            borderRadius: 18,
+            padding: '22px 18px',
             textAlign: 'center',
-            marginBottom: 20,
+            marginBottom: 16,
           }}>
-            <div style={{ color: 'var(--clr-primary)', marginBottom: 10, display: 'inline-flex' }}>
-              <Icons.Trophy size={38} />
+            <div style={{ color: '#818cf8', marginBottom: 8, display: 'inline-flex' }}>
+              <Icons.Trophy size={36} />
             </div>
-            <h3 style={{ fontSize: 18, color: 'var(--clr-primary)', fontWeight: 800, marginBottom: 6 }}>
-              Live Leaderboard on Main Screen!
+            <h3 style={{ fontSize: 17, color: '#e0e7ff', fontWeight: 800, marginBottom: 6 }}>
+              Live Standings on Main Stage Screen!
             </h3>
-            <p style={{ fontSize: 13, color: 'var(--clr-text-2)', lineHeight: 1.5 }}>
-              Look up at the main stage projector screen to see current rankings, top scorers, and fastest responses.
+            <p style={{ fontSize: 12.5, color: '#cbd5e1', lineHeight: 1.5 }}>
+              Look up at the auditorium projector to see fastest fingers, round winners, and current rankings.
             </p>
           </div>
 
-          <p style={{ textAlign: 'center', fontSize: 13, color: 'var(--clr-text-muted)', marginTop: 16 }}>
-            Stay on this screen. Next round will appear automatically.
+          <p style={{ textAlign: 'center', fontSize: 12.5, color: '#64748b', marginTop: 12 }}>
+            Keep this screen open. Next round will appear automatically.
           </p>
         </div>
       </div>
@@ -472,20 +561,31 @@ export default function GamePage() {
 
   // ── Render: COMPLETED / PAUSED / WAITING ──────────────────────────
   return (
-    <div className="page">
+    <div className="page" style={{ background: '#090d16', color: '#f8fafc' }}>
       <Toast toast={toast} />
+      <IPhoneFullscreenHelper isOpen={showIosGuide} onClose={() => setShowIosGuide(false)} />
 
-      <div className="glass-card" style={{ maxWidth: 480, width: '100%', padding: 40, textAlign: 'center' }}>
+      <div
+        className="glass-card fade-in"
+        style={{
+          maxWidth: 440, width: '100%', padding: 'clamp(28px, 6vw, 42px)', textAlign: 'center',
+          background: 'rgba(15, 23, 42, 0.92)', border: '1px solid rgba(255,255,255,0.12)',
+          borderRadius: 24, boxShadow: '0 25px 60px rgba(0,0,0,0.6)',
+        }}
+      >
         <div style={{
           display: 'inline-flex', padding: 20,
-          background: phase === PHASE.COMPLETED ? '#ecfdf5' : 'var(--clr-primary-light)',
-          color: phase === PHASE.COMPLETED ? '#10b981' : 'var(--clr-primary)',
+          background: phase === PHASE.COMPLETED
+            ? 'rgba(16, 185, 129, 0.15)'
+            : 'rgba(99, 102, 241, 0.2)',
+          color: phase === PHASE.COMPLETED ? '#10b981' : '#818cf8',
           borderRadius: '50%', marginBottom: 20,
-        }}>
-          {phase === PHASE.COMPLETED ? <Icons.Trophy size={44} /> : <Icons.Lock size={44} />}
+          boxShadow: phase === PHASE.COMPLETED ? '0 0 25px rgba(16, 185, 129, 0.3)' : '0 0 25px rgba(99, 102, 241, 0.4)',
+        }} className={phase === PHASE.WAITING ? 'radar-circle' : ''}>
+          {phase === PHASE.COMPLETED ? <Icons.Trophy size={42} /> : <Icons.Lock size={42} />}
         </div>
 
-        <h2 style={{ fontSize: 24, marginBottom: 8, color: 'var(--clr-text-h)' }}>
+        <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8, color: '#ffffff' }}>
           {phase === PHASE.COMPLETED
             ? 'Quiz Event Completed!'
             : phase === PHASE.PAUSED
@@ -493,22 +593,29 @@ export default function GamePage() {
             : 'Quiz Arena Locked'}
         </h2>
 
-        <p style={{ fontSize: 14, color: 'var(--clr-text)', marginBottom: 24, lineHeight: 1.6 }}>
+        <p style={{ fontSize: 13.5, color: '#94a3b8', marginBottom: 20, lineHeight: 1.6 }}>
           {phase === PHASE.COMPLETED
             ? 'Thank you for competing in the Silicon Sorcerer QR Quest. Standings are finalized!'
             : phase === PHASE.PAUSED
             ? 'The proctor has temporarily paused the quiz. Stand by.'
-            : `Welcome, ${session?.fullName}! Please keep this screen open. When Round 1 begins, the question and options will appear automatically.`}
+            : `Welcome, ${session?.fullName}! Keep this screen open. When Round 1 begins, the question and options will appear automatically.`}
         </p>
 
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-          fontSize: 13, color: 'var(--clr-text-2)', background: 'var(--clr-surface-2)',
-          padding: '10px 16px', borderRadius: 'var(--radius-md)',
+          fontSize: 12.5, color: '#cbd5e1', background: 'rgba(255, 255, 255, 0.05)',
+          padding: '10px 16px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)',
         }}>
           <span className={`status-dot ${connected ? 'live' : 'paused'}`} />
           <span>{connected ? 'Live Connected to Host Server' : 'Reconnecting...'}</span>
         </div>
+
+        {/* iPhone Fullscreen Helper Tip */}
+        {isIOS && !isStandalone && (
+          <div style={{ marginTop: 14 }}>
+            <IPhoneBannerPrompt onOpenGuide={() => setShowIosGuide(true)} />
+          </div>
+        )}
       </div>
     </div>
   );

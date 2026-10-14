@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiFetch, setParticipantSession, getParticipantSession } from '../utils';
 import { useToast } from '../hooks';
-import { Toast, Spinner } from '../components';
+import { Toast, Spinner, IPhoneFullscreenHelper, IPhoneBannerPrompt } from '../components';
 import { Icons } from '../Icons';
 
 export default function RegisterPage() {
@@ -15,6 +15,17 @@ export default function RegisterPage() {
   const [checking, setChecking] = useState(true);
   const [eventStatus, setEventStatus] = useState(null);
   const [registeredUser, setRegisteredUser] = useState(null);
+  const [showIosGuide, setShowIosGuide] = useState(false);
+
+  // Check iOS device & standalone status
+  const isIOS = typeof navigator !== 'undefined' && (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
+  const isStandalone = typeof window !== 'undefined' && (
+    window.navigator.standalone === true ||
+    window.matchMedia('(display-mode: standalone)').matches
+  );
 
   // If already registered, go to game
   useEffect(() => {
@@ -59,11 +70,15 @@ export default function RegisterPage() {
   };
 
   const handleEnterArena = () => {
-    // Attempt fullscreen to lock screen on student device
+    // Attempt standard fullscreen API (works on Android / Chrome / Desktop)
     try {
       if (document.documentElement.requestFullscreen) {
         document.documentElement.requestFullscreen().catch(() => {});
       }
+    } catch {}
+    // Scroll by 1px on iOS Safari to trigger minimal toolbar
+    try {
+      window.scrollTo(0, 1);
     } catch {}
     navigate('/game', { replace: true });
   };
@@ -81,30 +96,37 @@ export default function RegisterPage() {
   return (
     <div className="page">
       <Toast toast={toast} />
+      <IPhoneFullscreenHelper isOpen={showIosGuide} onClose={() => setShowIosGuide(false)} />
 
-      <div className="container fade-in">
+      <div className="container fade-in" style={{ maxWidth: 440, width: '100%' }}>
         {/* Brand Header */}
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+        <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <div style={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            width: 64, height: 64, borderRadius: 18,
+            width: 60, height: 60, borderRadius: 18,
             background: 'var(--grad-primary)',
             color: '#ffffff',
-            marginBottom: 16,
-            boxShadow: '0 8px 24px rgba(79, 70, 229, 0.25)',
+            marginBottom: 14,
+            boxShadow: '0 8px 24px rgba(79, 70, 229, 0.35)',
+            position: 'relative',
           }}>
-            <Icons.QrCode size={32} />
+            <Icons.QrCode size={30} />
+            <div style={{
+              position: 'absolute', inset: -4, borderRadius: 22,
+              border: '2px solid rgba(99, 102, 241, 0.3)',
+              animation: 'pulseLight 3s infinite',
+            }} />
           </div>
-          <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 6, color: 'var(--clr-text-h)' }}>
+          <h1 style={{ fontSize: 'clamp(22px, 5vw, 28px)', fontWeight: 800, marginBottom: 4, color: 'var(--clr-text-h)' }}>
             Silicon Sorcerer
           </h1>
-          <p style={{ fontSize: 14, color: 'var(--clr-text)' }}>
+          <p style={{ fontSize: 13.5, color: 'var(--clr-text)' }}>
             College QR Quest & Live Competition Arena
           </p>
         </div>
 
         {/* Card */}
-        <div className="glass-card" style={{ padding: 32 }}>
+        <div className="glass-card" style={{ padding: 'clamp(20px, 5vw, 32px)', borderRadius: 24 }}>
           {isClosed ? (
             <div style={{ textAlign: 'center', padding: '24px 0' }}>
               <div style={{ display: 'inline-flex', padding: 16, background: '#fef2f2', color: '#ef4444', borderRadius: '50%', marginBottom: 16 }}>
@@ -117,11 +139,15 @@ export default function RegisterPage() {
             </div>
           ) : registeredUser ? (
             /* Registered Screen Lock Prompt */
-            <div style={{ textAlign: 'center', padding: '16px 0' }}>
-              <div style={{ display: 'inline-flex', padding: 16, background: '#ecfdf5', color: '#10b981', borderRadius: '50%', marginBottom: 16 }}>
+            <div style={{ textAlign: 'center', padding: '12px 0' }}>
+              <div style={{
+                display: 'inline-flex', padding: 16, background: '#ecfdf5',
+                color: '#10b981', borderRadius: '50%', marginBottom: 16,
+                boxShadow: '0 0 20px rgba(16, 185, 129, 0.25)',
+              }}>
                 <Icons.CheckCircle size={36} />
               </div>
-              <h2 style={{ fontSize: 22, marginBottom: 8, color: 'var(--clr-text-h)' }}>
+              <h2 style={{ fontSize: 22, marginBottom: 8, color: 'var(--clr-text-h)', fontWeight: 800 }}>
                 Welcome, {registeredUser.fullName}!
               </h2>
               <p style={{ fontSize: 13, color: 'var(--clr-text)', marginBottom: 20, lineHeight: 1.6 }}>
@@ -132,7 +158,10 @@ export default function RegisterPage() {
                 id="btn-lock-enter"
                 className="btn btn-primary btn-full btn-lg"
                 onClick={handleEnterArena}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                  fontSize: 15, fontWeight: 700, borderRadius: 14,
+                }}
               >
                 <Icons.Lock size={18} />
                 <span>Lock Screen & Enter Quiz</span>
@@ -141,13 +170,16 @@ export default function RegisterPage() {
           ) : (
             /* Registration Form */
             <form onSubmit={handleSubmit}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
-                <span className="badge badge-primary">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+                <span className="badge badge-primary" style={{ fontSize: 12.5 }}>
                   <Icons.Users size={13} /> Participant Registration
+                </span>
+                <span className="badge badge-success" style={{ fontSize: 11.5 }}>
+                  <span className="status-dot live" /> Ready to Join
                 </span>
               </div>
 
-              <div className="form-group">
+              <div className="form-group" style={{ marginBottom: 16 }}>
                 <label className="form-label" htmlFor="fullName">Full Name</label>
                 <input
                   id="fullName"
@@ -159,10 +191,11 @@ export default function RegisterPage() {
                   disabled={loading}
                   required
                   autoFocus
+                  style={{ fontSize: 15, padding: '12px 14px' }}
                 />
               </div>
 
-              <div className="form-group">
+              <div className="form-group" style={{ marginBottom: 18 }}>
                 <label className="form-label" htmlFor="course">Course / Department / Year</label>
                 <input
                   id="course"
@@ -173,6 +206,7 @@ export default function RegisterPage() {
                   onChange={(e) => setCourse(e.target.value)}
                   disabled={loading}
                   required
+                  style={{ fontSize: 15, padding: '12px 14px' }}
                 />
               </div>
 
@@ -181,16 +215,16 @@ export default function RegisterPage() {
                 border: '1px solid var(--clr-border)',
                 borderRadius: 'var(--radius-md)',
                 padding: '12px 14px',
-                marginBottom: 24,
+                marginBottom: 20,
                 display: 'flex',
                 gap: 10,
                 alignItems: 'flex-start',
               }}>
-                <div style={{ color: 'var(--clr-primary)', marginTop: 2 }}>
+                <div style={{ color: 'var(--clr-primary)', marginTop: 2, flexShrink: 0 }}>
                   <Icons.ShieldAlert size={16} />
                 </div>
                 <p style={{ fontSize: 12, color: 'var(--clr-text-2)', lineHeight: 1.5 }}>
-                  <strong>Anti-Cheat Active:</strong> Your screen will lock during the quiz. Tab-switching or exiting the window will notify the admin immediately.
+                  <strong>Anti-Cheat Active:</strong> Your device will lock during questions. Switching tabs or exiting will alert the quiz host immediately.
                 </p>
               </div>
 
@@ -199,17 +233,34 @@ export default function RegisterPage() {
                 type="submit"
                 className="btn btn-primary btn-full btn-lg"
                 disabled={loading}
+                style={{
+                  fontSize: 15.5,
+                  fontWeight: 700,
+                  borderRadius: 14,
+                  padding: '13px 20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                }}
               >
                 {loading ? <Spinner size="sm" /> : (
                   <>
                     <span>Register to Compete</span>
-                    <Icons.ChevronRight size={16} />
+                    <Icons.ChevronRight size={17} />
                   </>
                 )}
               </button>
             </form>
           )}
         </div>
+
+        {/* iPhone Fullscreen Helper Banner */}
+        {isIOS && !isStandalone && (
+          <div style={{ textAlign: 'center', marginTop: 14 }}>
+            <IPhoneBannerPrompt onOpenGuide={() => setShowIosGuide(true)} />
+          </div>
+        )}
       </div>
     </div>
   );
