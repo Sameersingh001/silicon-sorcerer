@@ -87,22 +87,31 @@ app.use(async (req, res, next) => {
 // Make io accessible to routes/controllers
 app.set('io', io);
 
-// Health check endpoint (for deployment platforms, uptime monitors, and debugging)
-app.get('/api/health', (req, res) => {
-  res.json({
+// Health check endpoints (for Render, Railway, Vercel, Docker, uptime monitors & probes)
+const healthCheckHandler = (req, res) => {
+  const isDbConnected = mongoose.connection.readyState === 1;
+  res.status(200).json({
+    ok: true,
     status: 'ok',
+    message: 'Silicon Sorcerer Backend is healthy and running!',
     cors: 'all-origins-allowed (*)',
-    database: mongoose.connection.readyState === 1 ? 'connected' : 'connecting',
+    database: isDbConnected ? 'connected' : 'connecting',
+    uptimeSeconds: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
   });
-});
+};
+
+app.get(['/health', '/api/health', '/ok', '/api/ok', '/ping', '/healthz'], healthCheckHandler);
 
 // Root route
 app.get('/', (req, res) => {
   res.json({
+    ok: true,
+    status: 'ok',
     message: '🚀 Silicon Sorcerer Backend API is live!',
-    health: '/api/health',
-    cors: 'all-origins-allowed',
+    health: '/health',
+    apiHealth: '/api/health',
+    cors: 'all-origins-allowed (*)',
     version: '1.0.0',
   });
 });
