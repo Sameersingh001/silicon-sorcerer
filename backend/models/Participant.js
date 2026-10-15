@@ -57,4 +57,9 @@ participantSchema.statics.hashToken = function (token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 };
 
+// Fast index lookups for session verification and event participant lists
+participantSchema.index({ sessionTokenHash: 1, eventId: 1 });
+participantSchema.index({ eventId: 1, registeredAt: -1 });
+
 module.exports = mongoose.model('Participant', participantSchema);
+

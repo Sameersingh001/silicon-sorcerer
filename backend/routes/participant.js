@@ -8,6 +8,8 @@ const { authMiddleware } = require('../middleware/auth');
 
 const router = express.Router();
 
+const { cacheParticipant } = require('../utils/submissionEngine');
+
 // POST /api/participants/register
 router.post('/register', async (req, res) => {
   try {
@@ -28,6 +30,13 @@ router.post('/register', async (req, res) => {
       const tokenHash = Participant.hashToken(sessionToken);
       const existing = await Participant.findOne({ sessionTokenHash: tokenHash, eventId: event._id });
       if (existing) {
+        cacheParticipant(tokenHash, {
+          participantId: existing.participantId,
+          fullName: existing.fullName,
+          course: existing.course,
+          eventId: event._id,
+        });
+
         return res.json({
           success: true,
           participant: {
@@ -54,15 +63,29 @@ router.post('/register', async (req, res) => {
       sessionTokenHash: tokenHash,
     });
 
-    // Notify admin of new registration via socket
+    // Cache participant in-memory for instant submission lookups
+    cacheParticipant(tokenHash, {
+      participantId: participant.participantId,
+      fullName: participant.fullName,
+      course: participant.course,
+      eventId: event._id,
+    });
+
+    // Notify admin of new registration via socket asynchronously
     const io = req.app.get('io');
-    const participantCount = await Participant.countDocuments({ eventId: event._id });
     if (io) {
-      io.emit('participant:joined', {
-        participantId,
-        fullName: participant.fullName,
-        course: participant.course,
-        participantCount,
+      setImmediate(async () => {
+        try {
+          const participantCount = await Participant.countDocuments({ eventId: event._id });
+          io.emit('participant:joined', {
+            participantId,
+            fullName: participant.fullName,
+            course: participant.course,
+            participantCount,
+          });
+        } catch (e) {
+          console.warn('Participant count notify error:', e.message);
+        }
       });
     }
 

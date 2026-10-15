@@ -19,6 +19,7 @@ export default function GamePage() {
   const navigate = useNavigate();
   const { toast, showToast } = useToast();
   const socketRef = useRef(null);
+  const arenaRef = useRef(null);
 
   const [session, setSession] = useState(null);
   const [phase, setPhase] = useState(PHASE.WAITING);
@@ -148,11 +149,6 @@ export default function GamePage() {
     socket.on('game:started', () => {
       setPhase(PHASE.WAITING);
       showToast('The Quiz has officially started! Get ready...', 'info');
-      try {
-        if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-          document.documentElement.requestFullscreen().catch(() => {});
-        }
-      } catch {}
     });
 
     socket.on('question:new', (q) => {
@@ -163,12 +159,8 @@ export default function GamePage() {
       setPhase(PHASE.QUESTION);
       setLastResult(null);
 
-      try {
-        if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-          document.documentElement.requestFullscreen().catch(() => {});
-        }
-      } catch {}
-      try { window.scrollTo(0, 1); } catch {}
+      // Smoothly reset arena scroll without jumping window offset on Android
+      arenaRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
     });
 
     socket.on('round:closed', () => {
@@ -180,12 +172,13 @@ export default function GamePage() {
       setRoundLeaderboard(leaderboard);
       const myResult = leaderboard.find((item) => item.participantId === session.participantId);
       if (myResult) {
-        setLastResult({
+        setLastResult((prev) => ({
+          ...prev,
           isCorrect: myResult.isCorrect,
           pointsAwarded: myResult.pointsAwarded,
           responseTimeMs: myResult.responseTimeMs,
           rank: myResult.rank,
-        });
+        }));
       }
       setPhase(PHASE.ROUND_RESULT);
     });
@@ -207,35 +200,89 @@ export default function GamePage() {
     return () => socket.disconnect();
   }, [session, navigate, showToast]);
 
-  // ── Submit Answer ────────────────────────────────────────────────
+  // ── Instant Submit Answer (Optimistic UI + Fast Socket with HTTP Fallback) ──
   const submitAnswer = async (ansToSubmit) => {
     const finalAnswer = ansToSubmit || selectedOption || textAnswer;
     if (!finalAnswer || submitting) return;
 
     setSubmitting(true);
-    try {
-      const data = await apiFetch('/api/submissions', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionToken: session.sessionToken,
-          submittedAnswer: finalAnswer,
-        }),
-      });
 
-      if (data.success) {
-        setPhase(PHASE.SUBMITTED);
-        showToast('Answer locked & submitted!', 'success');
-      } else {
-        showToast(data.message || 'Submission rejected', 'error');
-        setSubmitting(false);
+    // Haptic buzz on Android devices for immediate tactile feedback
+    try {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate(35);
       }
-    } catch {
-      showToast('Network error while submitting answer', 'error');
+    } catch {}
+
+    const payload = {
+      sessionToken: session.sessionToken,
+      submittedAnswer: String(finalAnswer).trim(),
+    };
+
+    let handled = false;
+
+    const handleSubmissionResponse = (data) => {
+      if (handled) return;
+      handled = true;
       setSubmitting(false);
+
+      if (data && data.success) {
+        setLastResult({
+          isCorrect: !!data.isCorrect,
+          pointsAwarded: data.pointsAwarded || 0,
+          responseTimeMs: data.responseTimeMs || 0,
+          submittedAnswer: String(finalAnswer).trim(),
+          message: data.message,
+        });
+        setPhase(PHASE.SUBMITTED);
+        showToast(
+          data.isCorrect ? `Correct! +${data.pointsAwarded} pts!` : 'Answer locked & recorded!',
+          data.isCorrect ? 'success' : 'info'
+        );
+      } else {
+        showToast(data?.message || 'Submission rejected', 'error');
+      }
+    };
+
+    // 1. Try real-time WebSocket submission first (sub-15ms round trip)
+    if (socketRef.current?.connected) {
+      const socketTimeout = setTimeout(() => {
+        if (!handled) {
+          // Fallback to HTTP POST if socket does not ack in 1200ms
+          apiFetch('/api/submissions', {
+            method: 'POST',
+            body: JSON.stringify(payload),
+          })
+            .then(handleSubmissionResponse)
+            .catch(() => {
+              if (!handled) {
+                showToast('Network error while submitting answer', 'error');
+                setSubmitting(false);
+              }
+            });
+        }
+      }, 1200);
+
+      socketRef.current.emit('participant:submit_answer', payload, (res) => {
+        clearTimeout(socketTimeout);
+        handleSubmissionResponse(res);
+      });
+    } else {
+      // Direct HTTP POST if socket is disconnected
+      apiFetch('/api/submissions', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+        .then(handleSubmissionResponse)
+        .catch(() => {
+          showToast('Network error while submitting answer', 'error');
+          setSubmitting(false);
+        });
     }
   };
 
   const handleSelectOption = (opt) => {
+    if (submitting) return;
     setSelectedOption(opt);
     submitAnswer(opt);
   };
@@ -306,9 +353,10 @@ export default function GamePage() {
   if (phase === PHASE.QUESTION && question) {
     const letters = ['A', 'B', 'C', 'D'];
     const hasOptions = Array.isArray(question.options) && question.options.length >= 2;
+    const isCompactScreen = typeof window !== 'undefined' && (window.innerWidth < 640 || window.innerHeight < 740);
 
     return (
-      <div className="fullscreen-arena">
+      <div className="fullscreen-arena" ref={arenaRef}>
         <Toast toast={toast} />
         {renderCheatWarning()}
         <IPhoneFullscreenHelper isOpen={showIosGuide} onClose={() => setShowIosGuide(false)} />
@@ -369,88 +417,95 @@ export default function GamePage() {
           </div>
         </div>
 
-        {/* Central Question Card */}
-        <div className="arena-card fade-in">
-          {/* Animated Glowing Timer */}
-          <div style={{ textAlign: 'center' }}>
-            <TimerCircle
-              remainingMs={remaining}
-              totalMs={question.timeLimitSeconds * 1000}
-              compact={false}
-            />
-          </div>
-
-          {/* Question Text */}
-          <div style={{ textAlign: 'center' }}>
-            <h2 className="question-heading">
-              {question.questionText}
-            </h2>
-          </div>
-
-          {/* 4 Interactive Options Grid */}
-          {hasOptions ? (
-            <div className="options-grid">
-              {question.options.map((opt, idx) => {
-                const letter = letters[idx] || `${idx + 1}`;
-                const isSelected = selectedOption === opt;
-                return (
-                  <button
-                    key={idx}
-                    type="button"
-                    className={`option-btn opt-${idx % 4}${isSelected ? ' selected' : ''}`}
-                    onClick={() => handleSelectOption(opt)}
-                    disabled={submitting}
-                  >
-                    <span className="option-letter">{letter}</span>
-                    <span style={{ flex: 1, wordBreak: 'break-word' }}>{opt}</span>
-                    {isSelected && (
-                      <span style={{ display: 'inline-flex', color: '#fff', marginLeft: 4 }}>
-                        <Icons.Check size={18} />
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            /* Fallback Text Input */
-            <form onSubmit={(e) => { e.preventDefault(); submitAnswer(); }} style={{ display: 'flex', gap: 10 }}>
-              <input
-                type="text"
-                className="input-field"
-                placeholder="Type your answer here..."
-                value={textAnswer}
-                onChange={(e) => setTextAnswer(e.target.value)}
-                disabled={submitting}
-                autoFocus
-                style={{ background: 'rgba(255,255,255,0.06)', color: '#fff', borderColor: 'rgba(255,255,255,0.2)' }}
+        {/* Arena Content Centering Wrapper (keeps UI centered without upward shifting on Android) */}
+        <div className="arena-content-wrap">
+          <div className="arena-card fade-in">
+            {/* Animated Glowing Timer (scaled appropriately for mobile viewports) */}
+            <div style={{ textAlign: 'center' }}>
+              <TimerCircle
+                remainingMs={remaining}
+                totalMs={question.timeLimitSeconds * 1000}
+                compact={isCompactScreen}
               />
-              <button type="submit" className="btn btn-primary" disabled={submitting || !textAnswer.trim()}>
-                {submitting ? <Spinner size="sm" /> : 'Submit'}
-              </button>
-            </form>
-          )}
+            </div>
 
-          {/* Arena Footer Info */}
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: 12, marginTop: 4,
-            fontSize: 12.5, color: '#94a3b8',
-          }}>
-            <span>
-              Player: <strong style={{ color: '#f8fafc' }}>{session?.fullName}</strong>
-            </span>
-            <span style={{ color: '#818cf8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
-              <Icons.Zap size={14} color="#818cf8" /> Tap option to lock
-            </span>
+            {/* Question Text */}
+            <div style={{ textAlign: 'center' }}>
+              <h2 className="question-heading">
+                {question.questionText}
+              </h2>
+            </div>
+
+            {/* 4 Interactive Options Grid with instant tactile and visual feedback */}
+            {hasOptions ? (
+              <div className="options-grid">
+                {question.options.map((opt, idx) => {
+                  const letter = letters[idx] || `${idx + 1}`;
+                  const isSelected = selectedOption === opt;
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      className={`option-btn opt-${idx % 4}${isSelected ? ' selected' : ''}${submitting && isSelected ? ' submitting' : ''}`}
+                      onClick={() => handleSelectOption(opt)}
+                      disabled={submitting}
+                    >
+                      <span className="option-letter">{letter}</span>
+                      <span style={{ flex: 1, wordBreak: 'break-word' }}>{opt}</span>
+                      {submitting && isSelected ? (
+                        <Spinner size="sm" />
+                      ) : isSelected ? (
+                        <span style={{ display: 'inline-flex', color: '#fff', marginLeft: 4 }}>
+                          <Icons.Check size={18} />
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              /* Fallback Text Input */
+              <form onSubmit={(e) => { e.preventDefault(); submitAnswer(); }} style={{ display: 'flex', gap: 10 }}>
+                <input
+                  type="text"
+                  className="input-field"
+                  placeholder="Type your answer here..."
+                  value={textAnswer}
+                  onChange={(e) => setTextAnswer(e.target.value)}
+                  disabled={submitting}
+                  autoFocus
+                  style={{ background: 'rgba(255,255,255,0.06)', color: '#fff', borderColor: 'rgba(255,255,255,0.2)' }}
+                />
+                <button type="submit" className="btn btn-primary" disabled={submitting || !textAnswer.trim()}>
+                  {submitting ? <Spinner size="sm" /> : 'Submit'}
+                </button>
+              </form>
+            )}
+
+            {/* Arena Footer Info */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: 10, marginTop: 2,
+              fontSize: 12.5, color: '#94a3b8',
+            }}>
+              <span>
+                Player: <strong style={{ color: '#f8fafc' }}>{session?.fullName}</strong>
+              </span>
+              <span style={{ color: '#818cf8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Icons.Zap size={14} color="#818cf8" /> {submitting ? 'Locking answer...' : 'Tap option to lock'}
+              </span>
+            </div>
           </div>
         </div>
       </div>
     );
   }
 
-  // ── Render: SUBMITTED (WAITING FOR ROUND END) ─────────────────────
+  // ── Render: SUBMITTED (WAITING FOR ROUND END WITH INSTANT RESULT UPDATE) ──
   if (phase === PHASE.SUBMITTED) {
+    const isCorrect = lastResult?.isCorrect;
+    const hasResult = lastResult !== null && lastResult !== undefined;
+
     return (
       <div className="page" style={{ background: '#090d16', color: '#f8fafc' }}>
         <Toast toast={toast} />
@@ -459,35 +514,68 @@ export default function GamePage() {
         <div
           className="glass-card fade-in"
           style={{
-            maxWidth: 440, width: '100%', padding: 'clamp(28px, 6vw, 44px)', textAlign: 'center',
-            background: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(255,255,255,0.12)',
+            maxWidth: 450, width: '100%', padding: 'clamp(24px, 5vw, 40px)', textAlign: 'center',
+            background: 'rgba(15, 23, 42, 0.92)', border: '1px solid rgba(255,255,255,0.12)',
             borderRadius: 24, boxShadow: '0 25px 60px rgba(0,0,0,0.6)',
           }}
         >
+          {/* Animated Status Icon */}
           <div style={{
-            display: 'inline-flex', padding: 18, background: 'rgba(16, 185, 129, 0.15)',
-            color: '#10b981', borderRadius: '50%', marginBottom: 18,
-            border: '2px solid rgba(16, 185, 129, 0.3)',
-            boxShadow: '0 0 25px rgba(16, 185, 129, 0.35)',
+            display: 'inline-flex', padding: 18,
+            background: isCorrect ? 'rgba(16, 185, 129, 0.18)' : 'rgba(99, 102, 241, 0.18)',
+            color: isCorrect ? '#10b981' : '#818cf8',
+            borderRadius: '50%', marginBottom: 16,
+            border: `2px solid ${isCorrect ? 'rgba(16, 185, 129, 0.35)' : 'rgba(99, 102, 241, 0.35)'}`,
+            boxShadow: `0 0 28px ${isCorrect ? 'rgba(16, 185, 129, 0.35)' : 'rgba(99, 102, 241, 0.35)'}`,
           }}>
-            <Icons.CheckCircle size={44} />
+            {isCorrect ? <Icons.CheckCircle size={44} /> : <Icons.CheckCircle size={44} />}
           </div>
 
-          <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8, color: '#ffffff' }}>
-            Answer Locked & Submitted!
+          <h2 style={{ fontSize: 'clamp(20px, 4.5vw, 24px)', fontWeight: 800, marginBottom: 6, color: isCorrect ? '#34d399' : '#ffffff' }}>
+            {hasResult
+              ? isCorrect
+                ? '🎉 Correct Answer!'
+                : 'Answer Locked & Recorded!'
+              : 'Answer Locked & Submitted!'}
           </h2>
-          <p style={{ fontSize: 13.5, color: '#94a3b8', marginBottom: 24, lineHeight: 1.6 }}>
-            Your response has been timestamped and sent to the host. Stand by while other participants finish this round.
+
+          <p style={{ fontSize: 14, color: isCorrect ? '#a7f3d0' : '#94a3b8', marginBottom: 18, lineHeight: 1.5, fontWeight: isCorrect ? 600 : 400 }}>
+            {hasResult
+              ? isCorrect
+                ? `+${lastResult.pointsAwarded} points awarded in ${fmtMs(lastResult.responseTimeMs)}!`
+                : `Recorded in ${fmtMs(lastResult.responseTimeMs)}. Waiting for round to close...`
+              : 'Your response has been timestamped and sent to the host.'}
           </p>
 
+          {/* Submitted Answer Recap Chip */}
+          {lastResult?.submittedAnswer && (
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: 14,
+              padding: '12px 16px',
+              marginBottom: 18,
+              textAlign: 'left',
+              fontSize: 13,
+            }}>
+              <span style={{ color: '#94a3b8', fontSize: 11.5, display: 'block', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Your Locked Submission:
+              </span>
+              <strong style={{ color: '#f8fafc', fontSize: 14, wordBreak: 'break-word', display: 'block' }}>
+                {lastResult.submittedAnswer}
+              </strong>
+            </div>
+          )}
+
+          {/* Live Proctored Device Reminder */}
           <div style={{
-            background: 'rgba(255, 255, 255, 0.05)', padding: '12px 16px',
-            borderRadius: 14, border: '1px solid rgba(255, 255, 255, 0.08)',
+            background: 'rgba(255, 255, 255, 0.04)', padding: '10px 14px',
+            borderRadius: 12, border: '1px solid rgba(255, 255, 255, 0.08)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
           }}>
-            <Icons.Lock size={15} color="#818cf8" />
-            <span style={{ fontSize: 12.5, color: '#cbd5e1', fontWeight: 600 }}>
-              Device remains locked in proctored mode
+            <Icons.Lock size={14} color="#818cf8" />
+            <span style={{ fontSize: 12, color: '#cbd5e1', fontWeight: 600 }}>
+              Device proctor active • Standings will update on screen
             </span>
           </div>
         </div>

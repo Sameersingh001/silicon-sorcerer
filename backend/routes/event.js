@@ -94,6 +94,9 @@ router.post('/reset', authMiddleware, async (req, res) => {
       io.emit('game:reset', { message: 'Event has been reset' });
     }
 
+    const { resetEngine } = require('../utils/submissionEngine');
+    resetEngine();
+
     res.json({ success: true, message: 'Event reset successfully' });
   } catch (error) {
     console.error(error);

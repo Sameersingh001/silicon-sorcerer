@@ -48,5 +48,8 @@ const submissionSchema = new mongoose.Schema({
 
 // Prevent duplicate submissions: one per participant per question
 submissionSchema.index({ participantId: 1, questionId: 1 }, { unique: true });
+submissionSchema.index({ eventId: 1, questionId: 1 });
+submissionSchema.index({ eventId: 1, questionId: 1, isCorrect: 1 });
 
 module.exports = mongoose.model('Submission', submissionSchema);
+

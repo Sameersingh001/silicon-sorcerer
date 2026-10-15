@@ -4,6 +4,14 @@ const Participant = require('../models/Participant');
 const Submission = require('../models/Submission');
 const { buildLeaderboard } = require('../routes/leaderboard');
 const { getOrCreateEvent } = require('../routes/event');
+const {
+  setActiveRound,
+  closeActiveRound,
+  pauseActiveRound,
+  resumeActiveRound,
+  processAnswerSubmission,
+  cacheParticipant,
+} = require('../utils/submissionEngine');
 const jwt = require('jsonwebtoken');
 
 // Server-side round timeout tracker (one per active round)
@@ -42,6 +50,7 @@ const scheduleRoundTimeout = (io, event, remainingMs) => {
 
       freshEvent.roundTimer.roundStatus = 'closed';
       await freshEvent.save();
+      closeActiveRound(freshEvent.currentRoundNumber);
 
       io.emit('round:closed', {
         roundNumber: freshEvent.currentRoundNumber,
@@ -108,6 +117,7 @@ const initSocketHandlers = (io) => {
         if (!participant) return;
 
         await Participant.updateOne({ _id: participant._id }, { isConnected: true });
+        cacheParticipant(tokenHash, participant);
         socket.participantId = participant.participantId;
         socket.join('participants');
 
@@ -157,6 +167,29 @@ const initSocketHandlers = (io) => {
         }
       } catch (err) {
         console.error('participant:join error:', err);
+      }
+    });
+
+    // ─── Participant: Submit Answer via WebSocket (instant ultra-low latency) ───
+    socket.on('participant:submit_answer', async (data, ack) => {
+      try {
+        const { sessionToken, submittedAnswer } = data || {};
+        const result = await processAnswerSubmission({
+          sessionToken,
+          submittedAnswer,
+          io,
+        });
+
+        if (typeof ack === 'function') {
+          ack(result);
+        } else {
+          socket.emit('answer:result', result);
+        }
+      } catch (err) {
+        console.error('Socket submit error:', err);
+        const errPayload = { success: false, message: 'Submission failed. Please try again.' };
+        if (typeof ack === 'function') ack(errPayload);
+        else socket.emit('answer:result', errPayload);
       }
     });
 
@@ -288,6 +321,7 @@ const initSocketHandlers = (io) => {
           roundStatus: 'active',
         };
         await event.save();
+        setActiveRound(event, question);
 
         // Schedule auto-close at deadline
         scheduleRoundTimeout(io, event, question.timeLimitSeconds * 1000);
@@ -341,6 +375,7 @@ const initSocketHandlers = (io) => {
         event.roundTimer.remainingMs = remainingMs;
         event.roundTimer.roundStatus = 'paused';
         await event.save();
+        pauseActiveRound(remainingMs);
 
         io.emit('game:paused', { remainingMs, message: 'Game paused by host' });
         await broadcastGameState(io, event);
@@ -366,6 +401,7 @@ const initSocketHandlers = (io) => {
         event.roundTimer.remainingMs = null;
         event.roundTimer.roundStatus = 'active';
         await event.save();
+        resumeActiveRound(newDeadline);
 
         scheduleRoundTimeout(io, event, remainingMs);
 
@@ -390,6 +426,7 @@ const initSocketHandlers = (io) => {
 
         event.roundTimer.roundStatus = 'closed';
         await event.save();
+        closeActiveRound(event.currentRoundNumber);
 
         io.emit('round:closed', {
           roundNumber: event.currentRoundNumber,
@@ -423,6 +460,7 @@ const initSocketHandlers = (io) => {
         event.completedAt = new Date();
         event.roundTimer.roundStatus = 'closed';
         await event.save();
+        closeActiveRound();
 
         // Build final leaderboard
         const finalLeaderboard = await buildLeaderboard(event._id);

@@ -76,10 +76,12 @@ export default function RegisterPage() {
         document.documentElement.requestFullscreen().catch(() => {});
       }
     } catch {}
-    // Scroll by 1px on iOS Safari to trigger minimal toolbar
-    try {
-      window.scrollTo(0, 1);
-    } catch {}
+    // Scroll by 1px on iOS Safari to trigger minimal toolbar (iOS only)
+    if (isIOS) {
+      try {
+        window.scrollTo(0, 1);
+      } catch {}
+    }
     navigate('/game', { replace: true });
   };
 
