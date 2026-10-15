@@ -12,6 +12,220 @@ import {
 } from '../components';
 import { Icons } from '../Icons';
 
+// ── Helper to extract participant initials ──────────────────────────
+const getInitials = (name) => {
+  if (!name) return '??';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+};
+
+// ── Live Rankings & Podium Component ─────────────────────────────────
+const LivePodiumShowcase = ({
+  activeLeaderboardData = [],
+  finalLeaderboard = [],
+  roundLeaderboard = [],
+  currentRound = 0,
+  totalRounds = 0,
+  roundActive = false,
+  onRefresh,
+  onLaunchProjector,
+  isProjector = false,
+}) => {
+  const isFinal = finalLeaderboard && finalLeaderboard.length > 0;
+  const topThree = activeLeaderboardData.slice(0, 3);
+  const runnerUps = activeLeaderboardData.slice(3, 10);
+
+  return (
+    <div className="podium-showcase-card">
+      {/* Header Bar */}
+      <div className="podium-showcase-header">
+        <div className="podium-header-title">
+          <div className="podium-title-icon">
+            <Icons.Trophy size={24} color="#b45309" />
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: 'var(--clr-text-h)' }}>
+                {isFinal ? '🏆 Championship Podium & Final Winners' : 'Live Rankings & Stage Podium'}
+              </h2>
+              {roundActive ? (
+                <span className="badge badge-success" style={{ fontSize: 11, padding: '3px 8px' }}>
+                  <span className="status-dot live" style={{ width: 6, height: 6, display: 'inline-block', marginRight: 4 }} />
+                  Round {currentRound} Live
+                </span>
+              ) : (
+                <span className="badge badge-purple" style={{ fontSize: 11, padding: '3px 8px' }}>
+                  <Icons.Flame size={12} color="#a855f7" />
+                  {activeLeaderboardData.length > 0 ? `${activeLeaderboardData.length} Contenders Ranked` : 'Waiting for Submissions'}
+                </span>
+              )}
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--clr-text)', margin: '2px 0 0 0' }}>
+              {isFinal
+                ? 'Official tournament champions crowned by total points & response speed'
+                : `Live standings after Round ${currentRound} of ${totalRounds}`}
+            </p>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {onRefresh && (
+            <button className="btn btn-secondary btn-sm" onClick={onRefresh} title="Refresh live standings">
+              <Icons.Refresh size={14} /> <span>Refresh</span>
+            </button>
+          )}
+          {!isProjector && onLaunchProjector && (
+            <button className="btn btn-primary btn-sm" onClick={onLaunchProjector} title="Launch Fullscreen Projector Arena">
+              <Icons.Maximize size={14} /> <span>Projector Arena</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Podium Stage */}
+      {topThree.length === 0 ? (
+        <div className="podium-empty-box">
+          <div style={{ color: 'var(--clr-primary)', marginBottom: 10, display: 'flex', justifyContent: 'center' }}>
+            <Icons.Trophy size={40} />
+          </div>
+          <h3 style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>
+            Live Podium Ready & Awaiting Submissions
+          </h3>
+          <p style={{ fontSize: 13, color: 'var(--clr-text)', maxWidth: 440, margin: '0 auto' }}>
+            As soon as participants submit answers in active rounds, the gold crown, silver and bronze medals will illuminate right here in real time!
+          </p>
+        </div>
+      ) : (
+        <div className="podium-stage-wrapper">
+          <div className="podium-container">
+            {/* Rank 2 (Silver) - Visual Left */}
+            {topThree[1] && (
+              <div className="podium-column rank-2">
+                <div className="podium-card">
+                  <div className="podium-top-icon" title="2nd Place Silver Medal">
+                    <Icons.Medal size={28} color="#64748b" />
+                  </div>
+                  <div className="podium-avatar">
+                    {getInitials(topThree[1].fullName)}
+                    <span className="podium-rank-tag">2</span>
+                  </div>
+                  <div className="podium-name" title={topThree[1].fullName}>
+                    {topThree[1].fullName}
+                  </div>
+                  <div className="podium-course" title={topThree[1].course}>
+                    {topThree[1].course || 'Participant'}
+                  </div>
+                  <div className="podium-stats-group">
+                    <span className="podium-score-pill">
+                      <Icons.Zap size={13} color="#475569" />
+                      {topThree[1].totalScore ?? topThree[1].pointsAwarded ?? 0} pts
+                    </span>
+                    <span className="podium-speed-pill" title="Response speed">
+                      <Icons.Clock size={11} />
+                      {fmtMs(topThree[1].totalResponseTimeMs ?? topThree[1].responseTimeMs ?? 0)}
+                    </span>
+                  </div>
+                </div>
+                <div className="podium-pedestal">
+                  <span className="podium-pedestal-num">2</span>
+                </div>
+              </div>
+            )}
+
+            {/* Rank 1 (Gold) - Visual Center Elevated */}
+            {topThree[0] && (
+              <div className="podium-column rank-1">
+                <div className="podium-card">
+                  <div className="podium-top-icon" title="1st Place Champion Crown">
+                    <Icons.Crown size={36} color="#d97706" />
+                  </div>
+                  <div className="podium-avatar">
+                    {getInitials(topThree[0].fullName)}
+                    <span className="podium-rank-tag">1</span>
+                  </div>
+                  <div className="podium-name" title={topThree[0].fullName}>
+                    {topThree[0].fullName}
+                  </div>
+                  <div className="podium-course" title={topThree[0].course}>
+                    {topThree[0].course || 'Participant'}
+                  </div>
+                  <div className="podium-stats-group">
+                    <span className="podium-score-pill">
+                      <Icons.Trophy size={14} color="#92400e" />
+                      {topThree[0].totalScore ?? topThree[0].pointsAwarded ?? 0} pts
+                    </span>
+                    <span className="podium-speed-pill" title="Fastest response speed">
+                      <Icons.Flame size={12} color="#f59e0b" />
+                      {fmtMs(topThree[0].totalResponseTimeMs ?? topThree[0].responseTimeMs ?? 0)}
+                    </span>
+                  </div>
+                </div>
+                <div className="podium-pedestal">
+                  <span className="podium-pedestal-num">1</span>
+                </div>
+              </div>
+            )}
+
+            {/* Rank 3 (Bronze) - Visual Right */}
+            {topThree[2] && (
+              <div className="podium-column rank-3">
+                <div className="podium-card">
+                  <div className="podium-top-icon" title="3rd Place Bronze Award">
+                    <Icons.Award size={26} color="#b45309" />
+                  </div>
+                  <div className="podium-avatar">
+                    {getInitials(topThree[2].fullName)}
+                    <span className="podium-rank-tag">3</span>
+                  </div>
+                  <div className="podium-name" title={topThree[2].fullName}>
+                    {topThree[2].fullName}
+                  </div>
+                  <div className="podium-course" title={topThree[2].course}>
+                    {topThree[2].course || 'Participant'}
+                  </div>
+                  <div className="podium-stats-group">
+                    <span className="podium-score-pill">
+                      <Icons.Zap size={13} color="#9a3412" />
+                      {topThree[2].totalScore ?? topThree[2].pointsAwarded ?? 0} pts
+                    </span>
+                    <span className="podium-speed-pill" title="Response speed">
+                      <Icons.Clock size={11} />
+                      {fmtMs(topThree[2].totalResponseTimeMs ?? topThree[2].responseTimeMs ?? 0)}
+                    </span>
+                  </div>
+                </div>
+                <div className="podium-pedestal">
+                  <span className="podium-pedestal-num">3</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Runners-up quick strip (Ranks 4-10) */}
+          {runnerUps.length > 0 && (
+            <div className="podium-runners-strip">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: 'var(--clr-text-muted)', flexShrink: 0 }}>
+                <Icons.Flame size={14} color="#f59e0b" />
+                <span>Top Contenders (4–{3 + runnerUps.length}):</span>
+              </div>
+              {runnerUps.map((runner) => (
+                <div key={runner.participantId} className="podium-runner-badge" title={`${runner.fullName} (${runner.course || 'Participant'})`}>
+                  <strong style={{ color: 'var(--clr-primary)' }}>#{runner.rank}</strong>
+                  <span>{runner.fullName}</span>
+                  <span style={{ color: 'var(--clr-text-muted)', fontSize: 11 }}>
+                    ({runner.totalScore ?? runner.pointsAwarded ?? 0} pts · {fmtMs(runner.totalResponseTimeMs ?? runner.responseTimeMs ?? 0)})
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const { toast, showToast } = useToast();
@@ -411,58 +625,16 @@ export default function AdminDashboard() {
           ) : (
             /* ── BIG LEADERBOARD VIEW ON MAIN SCREEN ── */
             <div className="projector-leaderboard-card">
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-                <div>
-                  <h2 style={{ fontSize: 26, fontWeight: 800 }}>🏆 Live Rankings & Podium</h2>
-                  <p style={{ fontSize: 14, color: 'var(--clr-text)' }}>
-                    {finalLeaderboard.length > 0 ? 'Final Tournament Winners' : `Standings after Round ${currentRound}`}
-                  </p>
-                </div>
-                <button className="btn btn-secondary btn-sm" onClick={getLeaderboard}>
-                  <Icons.Refresh size={14} /> Refresh
-                </button>
-              </div>
-
-              {/* Top 3 Podium */}
-              {topThree.length >= 1 && (
-                <div className="podium-container">
-                  {/* Rank 2 (Silver) */}
-                  {topThree[1] && (
-                    <div className="podium-card rank-2">
-                      <span style={{ fontSize: 28, marginBottom: 4 }}>🥈</span>
-                      <strong style={{ fontSize: 16 }}>{topThree[1].fullName}</strong>
-                      <span style={{ fontSize: 12, color: 'var(--clr-text-muted)' }}>{topThree[1].course}</span>
-                      <span className="badge badge-primary" style={{ marginTop: 8 }}>
-                        {topThree[1].totalScore ?? topThree[1].pointsAwarded ?? 0} pts
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Rank 1 (Gold) */}
-                  {topThree[0] && (
-                    <div className="podium-card rank-1">
-                      <span style={{ fontSize: 36, marginBottom: 4 }}>🥇</span>
-                      <strong style={{ fontSize: 18, color: '#b45309' }}>{topThree[0].fullName}</strong>
-                      <span style={{ fontSize: 12, color: 'var(--clr-text-muted)' }}>{topThree[0].course}</span>
-                      <span className="badge badge-warning" style={{ marginTop: 8, fontSize: 13, fontWeight: 800 }}>
-                        {topThree[0].totalScore ?? topThree[0].pointsAwarded ?? 0} pts
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Rank 3 (Bronze) */}
-                  {topThree[2] && (
-                    <div className="podium-card rank-3">
-                      <span style={{ fontSize: 28, marginBottom: 4 }}>🥉</span>
-                      <strong style={{ fontSize: 16 }}>{topThree[2].fullName}</strong>
-                      <span style={{ fontSize: 12, color: 'var(--clr-text-muted)' }}>{topThree[2].course}</span>
-                      <span className="badge badge-primary" style={{ marginTop: 8 }}>
-                        {topThree[2].totalScore ?? topThree[2].pointsAwarded ?? 0} pts
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
+              <LivePodiumShowcase
+                activeLeaderboardData={activeLeaderboardData}
+                finalLeaderboard={finalLeaderboard}
+                roundLeaderboard={roundLeaderboard}
+                currentRound={currentRound}
+                totalRounds={totalRounds}
+                roundActive={roundActive}
+                onRefresh={getLeaderboard}
+                isProjector={true}
+              />
 
               {/* Rankings Table */}
               <div className="table-container" style={{ flex: 1, overflowY: 'auto' }}>
@@ -665,6 +837,18 @@ export default function AdminDashboard() {
       {/* ── TAB 1: GAME CONTROL ───────────────────────────────────── */}
       {activeTab === 'control' && (
         <div className="fade-in">
+          {/* Live Rankings & Podium Showcase (Prominently at the top on admin side) */}
+          <LivePodiumShowcase
+            activeLeaderboardData={activeLeaderboardData}
+            finalLeaderboard={finalLeaderboard}
+            roundLeaderboard={roundLeaderboard}
+            currentRound={currentRound}
+            totalRounds={totalRounds}
+            roundActive={roundActive}
+            onRefresh={getLeaderboard}
+            onLaunchProjector={toggleProjectorMode}
+          />
+
           {/* Quick Metrics */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 16, marginBottom: 20 }}>
             <div className="glass-card" style={{ padding: '16px 20px' }}>
@@ -971,6 +1155,18 @@ export default function AdminDashboard() {
       {/* ── TAB 3: LEADERBOARD ────────────────────────────────────── */}
       {activeTab === 'leaderboard' && (
         <div className="fade-in">
+          {/* Live Rankings & Podium Showcase (Prominently at the top on admin side) */}
+          <LivePodiumShowcase
+            activeLeaderboardData={activeLeaderboardData}
+            finalLeaderboard={finalLeaderboard}
+            roundLeaderboard={roundLeaderboard}
+            currentRound={currentRound}
+            totalRounds={totalRounds}
+            roundActive={roundActive}
+            onRefresh={getLeaderboard}
+            onLaunchProjector={toggleProjectorMode}
+          />
+
           <div className="glass-card" style={{ padding: 24 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
               <div>
