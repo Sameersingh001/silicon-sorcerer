@@ -285,25 +285,6 @@ export default function AdminDashboard() {
     currentQuestionRef.current = currentQuestion;
   }, [currentQuestion]);
 
-  // Auto-reveal when round countdown reaches 0
-  useEffect(() => {
-    const isRoundActive = gameState?.roundTimer?.roundStatus === 'active';
-    if (isRoundActive && remaining === 0 && currentQuestion && !showingAnswerReveal) {
-      const answer = currentQuestion.correctAnswer;
-      if (answer && !revealedAnswer) {
-        setRevealedAnswer(answer);
-        setShowingAnswerReveal(true);
-        setProjectorViewMode('question');
-        if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
-        revealTimerRef.current = setTimeout(() => {
-          setShowingAnswerReveal(false);
-          revealTimerRef.current = null;
-          setProjectorViewMode('leaderboard');
-        }, 2000);
-      }
-    }
-  }, [remaining, gameState?.roundTimer?.roundStatus, currentQuestion, showingAnswerReveal, revealedAnswer]);
-
   // ── Auth guard & initial load ────────────────────────────────────
   useEffect(() => {
     const token = getAdminToken();
@@ -398,10 +379,8 @@ export default function AdminDashboard() {
     });
 
     const triggerAnswerReveal = (correctAnswer) => {
-      const targetAns = correctAnswer || currentQuestionRef.current?.correctAnswer;
-      if (targetAns) {
-        setRevealedAnswer(targetAns);
-      }
+      if (!correctAnswer) return;
+      setRevealedAnswer(correctAnswer);
       setShowingAnswerReveal(true);
       setProjectorViewMode('question'); // Keep question view active on LED panel
 
@@ -417,9 +396,8 @@ export default function AdminDashboard() {
       }, 2000);
     };
 
-    socket.on('round:closed', ({ roundNumber, correctAnswer }) => {
-      showToast(`Round ${roundNumber} closed! Correct answer revealed...`, 'info');
-      triggerAnswerReveal(correctAnswer);
+    socket.on('round:closed', ({ roundNumber }) => {
+      showToast(`Round ${roundNumber} time is up! Round closed.`, 'info');
     });
 
     socket.on('question:answer_reveal', ({ correctAnswer }) => {
@@ -649,7 +627,7 @@ export default function AdminDashboard() {
           {showQuestionView ? (
             /* ── BIG QUESTION VIEW ── */
             <div className="projector-question-card">
-              {showingAnswerReveal && (
+              {!roundActive && showingAnswerReveal && revealedAnswer && (
                 <div className="projector-reveal-banner">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <Icons.CheckCircle size={26} color="#ffffff" />
@@ -676,14 +654,14 @@ export default function AdminDashboard() {
                   )}
                 </div>
 
-                {roundActive && !showingAnswerReveal && (
+                {roundActive && (
                   <TimerCircle
                     remainingMs={remaining}
                     totalMs={(currentQuestion.timeLimitSeconds || 20) * 1000}
                     large={true}
                   />
                 )}
-                {showingAnswerReveal && (
+                {!roundActive && showingAnswerReveal && (
                   <span className="badge badge-success" style={{ fontSize: 18, padding: '8px 18px', fontWeight: 800 }}>
                     ⏱ Time is up!
                   </span>
@@ -699,9 +677,9 @@ export default function AdminDashboard() {
               {Array.isArray(currentQuestion.options) && currentQuestion.options.length > 0 && (
                 <div className="projector-options-grid">
                   {currentQuestion.options.map((opt, i) => {
-                    const isCorrect = isCorrectOption(opt, i, revealedAnswer || currentQuestion.correctAnswer);
-                    const isHighlight = (showingAnswerReveal || revealedAnswer) && isCorrect;
-                    const isDimmed = (showingAnswerReveal || revealedAnswer) && !isCorrect;
+                    // CRITICAL: NEVER highlight while round is active! Only after roundActive === false AND showingAnswerReveal === true
+                    const isHighlight = !roundActive && showingAnswerReveal && Boolean(revealedAnswer) && isCorrectOption(opt, i, revealedAnswer);
+                    const isDimmed = !roundActive && showingAnswerReveal && Boolean(revealedAnswer) && !isHighlight;
 
                     return (
                       <div
@@ -1062,7 +1040,7 @@ export default function AdminDashboard() {
               {/* Current Question Display */}
               {currentQuestion ? (
                 <div className="glass-card" style={{ padding: 26 }}>
-                  {showingAnswerReveal && (
+                  {!roundActive && showingAnswerReveal && revealedAnswer && (
                     <div style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       padding: '12px 18px', marginBottom: 16,
@@ -1090,12 +1068,12 @@ export default function AdminDashboard() {
                         </span>
                       )}
                     </div>
-                    {roundActive && !showingAnswerReveal && (
+                    {roundActive && (
                       <span className="badge badge-success" style={{ fontSize: 14, padding: '6px 12px', fontWeight: 700 }}>
                         <Icons.Clock size={14} /> {Math.ceil(remaining / 1000)}s Remaining
                       </span>
                     )}
-                    {showingAnswerReveal && (
+                    {!roundActive && showingAnswerReveal && (
                       <span className="badge badge-success" style={{ fontSize: 14, padding: '6px 12px', fontWeight: 800 }}>
                         ⏱ Time Up!
                       </span>
@@ -1110,8 +1088,8 @@ export default function AdminDashboard() {
                   {Array.isArray(currentQuestion.options) && currentQuestion.options.length > 0 && (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 18 }}>
                       {currentQuestion.options.map((opt, i) => {
-                        const isCorrect = isCorrectOption(opt, i, revealedAnswer || currentQuestion.correctAnswer);
-                        const isHighlight = (showingAnswerReveal || revealedAnswer) && isCorrect;
+                        // CRITICAL: NEVER highlight while round is active!
+                        const isHighlight = !roundActive && showingAnswerReveal && Boolean(revealedAnswer) && isCorrectOption(opt, i, revealedAnswer);
 
                         return (
                           <div

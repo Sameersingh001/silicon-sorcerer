@@ -56,11 +56,10 @@ const scheduleRoundTimeout = (io, event, remainingMs) => {
 
       io.emit('round:closed', {
         roundNumber: freshEvent.currentRoundNumber,
-        correctAnswer: question ? question.correctAnswer : null,
         message: 'Time is up! Round closed.',
       });
 
-      // Build and broadcast round leaderboard & reveal answer to admin
+      // Reveal correct answer ONLY to admin screen when round times out
       if (question) {
         io.to('admins').emit('question:answer_reveal', {
           roundNumber: freshEvent.currentRoundNumber,
@@ -348,11 +347,10 @@ const initSocketHandlers = (io) => {
         // Send question (without answers) to all participants
         io.to('participants').emit('question:new', payload);
 
-        // Send question to admin (with correctAnswer cached, revealed after round timeout)
+        // Send question to admin (answers hidden while round is active!)
         io.to('admins').emit('question:admin', {
           ...payload,
           points: question.points,
-          correctAnswer: question.correctAnswer,
         });
 
         await broadcastGameState(io, event);
@@ -439,12 +437,11 @@ const initSocketHandlers = (io) => {
 
         io.emit('round:closed', {
           roundNumber: event.currentRoundNumber,
-          correctAnswer: question ? question.correctAnswer : null,
           message: 'Round closed by host.',
         });
 
         if (question) {
-          // Reveal correct answer to admin
+          // Reveal correct answer ONLY to admins when round is closed
           io.to('admins').emit('question:answer_reveal', {
             roundNumber: event.currentRoundNumber,
             correctAnswer: question.correctAnswer,

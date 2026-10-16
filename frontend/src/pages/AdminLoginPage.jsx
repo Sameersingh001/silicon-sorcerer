@@ -108,19 +108,7 @@ export default function AdminLoginPage() {
               />
             </div>
 
-            <div style={{
-              background: 'var(--clr-surface-2)',
-              border: '1px solid var(--clr-border)',
-              borderRadius: 'var(--radius-md)',
-              padding: '10px 14px',
-              fontSize: 12,
-              color: 'var(--clr-text)',
-              marginBottom: 20,
-              display: 'flex',
-              gap: 8,
-              alignItems: 'center',
-            }}>
-            </div>
+
 
             <button
               id="btn-login"
