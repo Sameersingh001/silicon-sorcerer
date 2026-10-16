@@ -32,9 +32,9 @@ export function StatusBadge({ status }) {
 }
 
 export function TimerCircle({ remainingMs, totalMs, compact = false, large = false }) {
-  const radius = compact ? 36 : large ? 60 : 48;
-  const size = compact ? 88 : large ? 144 : 116;
-  const strokeWidth = compact ? 6 : large ? 9 : 7;
+  const radius = compact ? 36 : large ? 40 : 48;
+  const size = compact ? 88 : large ? 96 : 116;
+  const strokeWidth = compact ? 6 : large ? 6 : 7;
   const circumference = 2 * Math.PI * radius;
   const pct = totalMs > 0 ? Math.max(0, remainingMs / totalMs) : 0;
   const offset = circumference * (1 - pct);
@@ -84,9 +84,9 @@ export function TimerCircle({ remainingMs, totalMs, compact = false, large = fal
         color: strokeColor,
         fontFamily: 'var(--font-display)',
       }}>
-        <span style={{ fontSize: compact ? 24 : large ? 42 : 32, fontWeight: 800, lineHeight: 1 }}>{secs}</span>
+        <span style={{ fontSize: compact ? 24 : large ? 28 : 32, fontWeight: 800, lineHeight: 1 }}>{secs}</span>
         <span style={{
-          fontSize: compact ? 9 : large ? 12 : 10,
+          fontSize: compact ? 9 : large ? 10 : 10,
           color: 'var(--clr-text-muted)',
           fontWeight: 700,
           textTransform: 'uppercase',

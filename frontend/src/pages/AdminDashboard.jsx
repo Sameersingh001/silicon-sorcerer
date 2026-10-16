@@ -700,11 +700,11 @@ export default function AdminDashboard() {
                 </div>
               )}
 
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--clr-border)', paddingTop: 14 }}>
-                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--clr-text-h)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--clr-border)', paddingTop: 10 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--clr-text-h)' }}>
                   ⏱ 20s Round Time Limit · 🏅 {currentQuestion.points || 10} Points
                 </span>
-                <span className="badge badge-success" style={{ fontSize: 13, padding: '5px 12px', fontWeight: 700 }}>
+                <span className="badge badge-success" style={{ fontSize: 12, padding: '4px 10px', fontWeight: 700 }}>
                   📩 {stats.totalSubmissions} Submissions Live ({stats.correctCount} Correct)
                 </span>
               </div>
