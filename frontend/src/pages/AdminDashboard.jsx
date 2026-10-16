@@ -467,15 +467,15 @@ export default function AdminDashboard() {
     else showToast('Not connected to server', 'error');
   }, [showToast]);
 
-  const startQuiz   = () => {
+  const startQuiz = () => {
     emit('admin:start_quiz');
     setIsProjectorMode(true);
   };
   const nextQuestion = () => emit('admin:next_question');
-  const pauseGame   = () => emit('admin:pause');
-  const resumeGame  = () => emit('admin:resume');
-  const closeRound  = () => emit('admin:close_round');
-  const endGame     = () => { if (confirm('End the game for all participants?')) emit('admin:end_game'); };
+  const pauseGame = () => emit('admin:pause');
+  const resumeGame = () => emit('admin:resume');
+  const closeRound = () => emit('admin:close_round');
+  const endGame = () => { if (confirm('End the game for all participants?')) emit('admin:end_game'); };
   const getLeaderboard = () => emit('admin:get_leaderboard');
 
   const resetEvent = async () => {
@@ -509,11 +509,11 @@ export default function AdminDashboard() {
     setIsProjectorMode(next);
     if (next) {
       if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-        document.documentElement.requestFullscreen().catch(() => {});
+        document.documentElement.requestFullscreen().catch(() => { });
       }
     } else {
       if (document.fullscreenElement && document.exitFullscreen) {
-        document.exitFullscreen().catch(() => {});
+        document.exitFullscreen().catch(() => { });
       }
     }
   };
@@ -564,12 +564,12 @@ export default function AdminDashboard() {
     );
   }
 
-  const isLive      = gameState?.status === 'live' || event?.status === 'live';
-  const isPaused    = gameState?.status === 'paused' || event?.status === 'paused';
+  const isLive = gameState?.status === 'live' || event?.status === 'live';
+  const isPaused = gameState?.status === 'paused' || event?.status === 'paused';
   const isCompleted = gameState?.status === 'completed' || event?.status === 'completed';
   const roundActive = gameState?.roundTimer?.roundStatus === 'active';
   const currentRound = gameState?.currentRoundNumber ?? event?.currentRoundNumber ?? 0;
-  const totalRounds  = gameState?.totalRounds ?? event?.totalRounds ?? questions.length;
+  const totalRounds = gameState?.totalRounds ?? event?.totalRounds ?? questions.length;
   const currentStatus = gameState?.status || event?.status || 'draft';
 
   // Filtered participants
@@ -594,29 +594,29 @@ export default function AdminDashboard() {
 
         {/* Top Minimal Bar */}
         <div className="projector-topbar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <span className="badge badge-primary" style={{ fontSize: 16, padding: '7px 16px', fontWeight: 800 }}>
-              <Icons.QrCode size={16} /> Silicon Sorcerer Projector
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span className="badge badge-primary" style={{ fontSize: 13, padding: '5px 12px', fontWeight: 700 }}>
+              <Icons.QrCode size={14} /> Silicon Sorcerer Projector
             </span>
-            <span className="badge badge-neutral" style={{ fontSize: 15, padding: '7px 14px', fontWeight: 700 }}>
+            <span className="badge badge-neutral" style={{ fontSize: 13, padding: '5px 12px', fontWeight: 600 }}>
               Round {currentRound} of {totalRounds}
             </span>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <span className="badge badge-success" style={{ fontSize: 15, padding: '7px 16px', fontWeight: 800 }}>
-              <Icons.Users size={16} /> {stats.participantCount} Students Live
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span className="badge badge-success" style={{ fontSize: 13, padding: '5px 12px', fontWeight: 700 }}>
+              <Icons.Users size={14} /> {stats.participantCount} Students Live
             </span>
             <button
               className="btn btn-secondary btn-sm"
-              style={{ fontSize: 15, padding: '8px 16px' }}
+              style={{ fontSize: 13, padding: '5px 12px' }}
               onClick={() => setProjectorViewMode(showQuestionView ? 'leaderboard' : 'question')}
             >
-              {showQuestionView ? <Icons.Trophy size={16} /> : <Icons.HelpCircle size={16} />}
+              {showQuestionView ? <Icons.Trophy size={14} /> : <Icons.HelpCircle size={14} />}
               <span>{showQuestionView ? 'Show Leaderboard' : 'Show Question'}</span>
             </button>
-            <button className="btn btn-secondary btn-sm" style={{ fontSize: 15, padding: '8px 16px' }} onClick={toggleProjectorMode} title="Exit Fullscreen Projector">
-              <Icons.XCircle size={18} />
+            <button className="btn btn-secondary btn-sm" style={{ fontSize: 13, padding: '5px 12px' }} onClick={toggleProjectorMode} title="Exit Fullscreen Projector">
+              <Icons.XCircle size={14} />
               <span>Exit Projector</span>
             </button>
           </div>
@@ -643,12 +643,12 @@ export default function AdminDashboard() {
               )}
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', gap: 12 }}>
-                  <span className="badge badge-primary" style={{ fontSize: 18, padding: '8px 18px', fontWeight: 800 }}>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <span className="badge badge-primary" style={{ fontSize: 13, padding: '5px 12px', fontWeight: 700 }}>
                     Round {currentQuestion.roundNumber} of {totalRounds}
                   </span>
                   {currentQuestion.category && (
-                    <span className="badge badge-purple" style={{ fontSize: 18, padding: '8px 18px', fontWeight: 700 }}>
+                    <span className="badge badge-purple" style={{ fontSize: 13, padding: '5px 12px', fontWeight: 600 }}>
                       {currentQuestion.category}
                     </span>
                   )}
@@ -662,7 +662,7 @@ export default function AdminDashboard() {
                   />
                 )}
                 {!roundActive && showingAnswerReveal && (
-                  <span className="badge badge-success" style={{ fontSize: 18, padding: '8px 18px', fontWeight: 800 }}>
+                  <span className="badge badge-success" style={{ fontSize: 14, padding: '5px 12px', fontWeight: 700 }}>
                     ⏱ Time is up!
                   </span>
                 )}
@@ -700,11 +700,11 @@ export default function AdminDashboard() {
                 </div>
               )}
 
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '2px solid var(--clr-border)', paddingTop: 20 }}>
-                <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--clr-text-h)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--clr-border)', paddingTop: 14 }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--clr-text-h)' }}>
                   ⏱ 20s Round Time Limit · 🏅 {currentQuestion.points || 10} Points
                 </span>
-                <span className="badge badge-success" style={{ fontSize: 16, padding: '8px 18px', fontWeight: 800 }}>
+                <span className="badge badge-success" style={{ fontSize: 13, padding: '5px 12px', fontWeight: 700 }}>
                   📩 {stats.totalSubmissions} Submissions Live ({stats.correctCount} Correct)
                 </span>
               </div>
@@ -740,19 +740,19 @@ export default function AdminDashboard() {
                     {activeLeaderboardData.map((item) => (
                       <tr key={item.participantId}>
                         <td>
-                          <span style={{ fontWeight: 900, fontSize: 19, color: item.rank <= 3 ? '#4f46e5' : 'inherit' }}>
+                          <span style={{ fontWeight: 800, fontSize: 15, color: item.rank <= 3 ? '#4f46e5' : 'inherit' }}>
                             #{item.rank}
                           </span>
                         </td>
-                        <td><strong style={{ fontSize: 18 }}>{item.fullName}</strong></td>
-                        <td style={{ fontSize: 16 }}>{item.course}</td>
+                        <td><strong style={{ fontSize: 15 }}>{item.fullName}</strong></td>
+                        <td style={{ fontSize: 13 }}>{item.course}</td>
                         <td>
-                          <span className="badge badge-success" style={{ fontSize: 16, padding: '6px 14px', fontWeight: 800 }}>
+                          <span className="badge badge-success" style={{ fontSize: 13, padding: '4px 10px', fontWeight: 700 }}>
                             {item.totalScore ?? item.pointsAwarded ?? 0} pts
                           </span>
                         </td>
-                        <td style={{ fontSize: 16 }}>{item.correctCount ?? (item.isCorrect ? 1 : 0)} correct</td>
-                        <td style={{ fontSize: 16 }}>{fmtMs(item.totalResponseTimeMs ?? item.responseTimeMs ?? 0)}</td>
+                        <td style={{ fontSize: 13 }}>{item.correctCount ?? (item.isCorrect ? 1 : 0)} correct</td>
+                        <td style={{ fontSize: 13 }}>{fmtMs(item.totalResponseTimeMs ?? item.responseTimeMs ?? 0)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -764,9 +764,9 @@ export default function AdminDashboard() {
 
         {/* ── LOWER FLOATING DOCK: QUIZ CONTROL FLOW ("Quiz Control Flow niche aa jaye") ── */}
         <div className="projector-dock">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingRight: 12, borderRight: '1px solid var(--clr-border)' }}>
-            <span className={`status-dot ${roundActive ? 'live' : 'paused'}`} style={{ width: 10, height: 10 }} />
-            <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--clr-text-h)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingRight: 10, borderRight: '1px solid var(--clr-border)', whiteSpace: 'nowrap' }}>
+            <span className={`status-dot ${roundActive ? 'live' : 'paused'}`} style={{ width: 8, height: 8 }} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--clr-text-h)', whiteSpace: 'nowrap' }}>
               {roundActive ? `Round ${currentRound} Active` : isCompleted ? 'Completed' : `Ready for Round ${currentRound + 1}`}
             </span>
           </div>
@@ -776,39 +776,39 @@ export default function AdminDashboard() {
               <button
                 id="dock-btn-next-question"
                 className="btn btn-primary"
-                style={{ fontSize: 15, padding: '9px 18px', fontWeight: 700 }}
+                style={{ fontSize: 13, padding: '6px 14px', fontWeight: 600, whiteSpace: 'nowrap' }}
                 onClick={nextQuestion}
                 disabled={roundActive || currentRound >= totalRounds}
               >
-                <Icons.Play size={16} />
+                <Icons.Play size={14} />
                 <span>Publish Round {currentRound + 1} (20s)</span>
               </button>
 
               {roundActive && (
-                <button id="dock-btn-close-round" className="btn btn-danger" style={{ fontSize: 15, padding: '9px 18px', fontWeight: 700 }} onClick={closeRound}>
-                  <Icons.Square size={16} />
+                <button id="dock-btn-close-round" className="btn btn-danger" style={{ fontSize: 13, padding: '6px 14px', fontWeight: 600, whiteSpace: 'nowrap' }} onClick={closeRound}>
+                  <Icons.Square size={14} />
                   <span>Close Round</span>
                 </button>
               )}
 
               {isLive ? (
-                <button className="btn btn-secondary" style={{ fontSize: 15, padding: '9px 18px' }} onClick={pauseGame}>
-                  <Icons.Pause size={16} /> Pause
+                <button className="btn btn-secondary" style={{ fontSize: 13, padding: '6px 13px', whiteSpace: 'nowrap' }} onClick={pauseGame}>
+                  <Icons.Pause size={14} /> <span>Pause</span>
                 </button>
               ) : (
-                <button className="btn btn-success" style={{ fontSize: 15, padding: '9px 18px' }} onClick={resumeGame}>
-                  <Icons.Play size={16} /> Resume
+                <button className="btn btn-success" style={{ fontSize: 13, padding: '6px 13px', whiteSpace: 'nowrap' }} onClick={resumeGame}>
+                  <Icons.Play size={14} /> <span>Resume</span>
                 </button>
               )}
 
-              <button className="btn btn-outline-danger" style={{ fontSize: 15, padding: '9px 18px' }} onClick={endGame}>
-                <Icons.Trophy size={16} /> End Quiz
+              <button className="btn btn-outline-danger" style={{ fontSize: 13, padding: '6px 13px', whiteSpace: 'nowrap' }} onClick={endGame}>
+                <Icons.Trophy size={14} /> <span>End Quiz</span>
               </button>
             </>
           )}
 
-          <button className="btn btn-secondary" style={{ fontSize: 15, padding: '9px 18px' }} onClick={toggleProjectorMode} title="Close Projector View">
-            <Icons.XCircle size={16} /> Exit
+          <button className="btn btn-secondary" style={{ fontSize: 13, padding: '6px 13px', whiteSpace: 'nowrap' }} onClick={toggleProjectorMode} title="Close Projector View">
+            <Icons.XCircle size={14} /> <span>Exit</span>
           </button>
         </div>
       </div>
