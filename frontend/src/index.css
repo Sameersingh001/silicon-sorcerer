@@ -846,7 +846,7 @@ h1, h2, h3, h4, h5, h6 {
   justify-content: center;
   padding: 24px 32px 110px; /* bottom padding leaves space for dock */
   overflow-y: auto;
-  max-width: 1180px;
+  max-width: 1340px;
   width: 100%;
   margin: 0 auto;
 }
@@ -857,16 +857,16 @@ h1, h2, h3, h4, h5, h6 {
   border: 1px solid var(--clr-border);
   border-radius: var(--radius-xl);
   box-shadow: 0 20px 48px -10px rgba(15, 23, 42, 0.12);
-  padding: 44px 52px;
+  padding: 44px 56px;
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 26px;
   animation: fadeIn 0.2s ease-out;
 }
 
 .projector-question-text {
-  font-size: clamp(24px, 3.2vw, 36px);
+  font-size: clamp(28px, 3.8vw, 46px);
   font-weight: 800;
   color: var(--clr-text-h);
   line-height: 1.35;
@@ -877,35 +877,126 @@ h1, h2, h3, h4, h5, h6 {
 .projector-options-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 18px;
+  gap: 22px;
 }
 
 .projector-option-box {
   display: flex;
   align-items: center;
-  gap: 18px;
-  padding: 20px 24px;
+  gap: 20px;
+  padding: 24px 30px;
   background: #f8fafc;
   border: 2px solid var(--clr-border);
-  border-radius: var(--radius-lg);
-  font-size: clamp(16px, 1.8vw, 22px);
-  font-weight: 600;
+  border-radius: var(--radius-xl);
+  font-size: clamp(20px, 2.3vw, 30px);
+  font-weight: 700;
   color: var(--clr-text-h);
   box-shadow: var(--shadow-sm);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  min-height: 88px;
+  box-sizing: border-box;
 }
 
 .projector-option-letter {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   background: var(--clr-primary);
   color: #ffffff;
-  font-size: 20px;
-  font-weight: 800;
+  font-size: 26px;
+  font-weight: 900;
   flex-shrink: 0;
+  transition: all 0.25s ease;
+}
+
+/* Highlight Correct Answer on Projector (Vibrant Green for LED Panel) */
+.projector-option-box.correct-answer-highlight {
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%) !important;
+  border-color: #047857 !important;
+  color: #ffffff !important;
+  box-shadow: 0 16px 42px rgba(16, 185, 129, 0.45), 0 0 0 5px rgba(52, 211, 153, 0.5) !important;
+  transform: scale(1.03);
+  animation: popGreen 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.projector-option-box.correct-answer-highlight .projector-option-letter {
+  background: #ffffff !important;
+  color: #059669 !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+}
+
+.projector-option-box.correct-answer-highlight span {
+  color: #ffffff !important;
+}
+
+.projector-option-box.dimmed-option {
+  opacity: 0.45;
+  filter: grayscale(0.25);
+}
+
+.correct-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.25);
+  padding: 6px 16px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  flex-shrink: 0;
+}
+
+@keyframes popGreen {
+  0%   { transform: scale(0.97); }
+  50%  { transform: scale(1.05); }
+  100% { transform: scale(1.03); }
+}
+
+/* Answer Reveal Top Banner on Projector */
+.projector-reveal-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  background: linear-gradient(135deg, #047857 0%, #10b981 100%);
+  border-radius: var(--radius-lg);
+  color: #ffffff;
+  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.35);
+  position: relative;
+  overflow: hidden;
+  animation: slideDown 0.3s ease-out;
+}
+
+.projector-reveal-countdown {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 6px 14px;
+  border-radius: 999px;
+}
+
+.reveal-progress-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 4px;
+  background: #ffffff;
+  animation: countdownBar 2s linear forwards;
+}
+
+@keyframes countdownBar {
+  0%   { width: 100%; }
+  100% { width: 0%; }
 }
 
 /* Big Leaderboard on Projector */
@@ -916,7 +1007,7 @@ h1, h2, h3, h4, h5, h6 {
   box-shadow: 0 20px 48px -10px rgba(15, 23, 42, 0.12);
   padding: 36px 44px;
   width: 100%;
-  max-height: 72vh;
+  max-height: 75vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1414,3 +1505,127 @@ h1, h2, h3, h4, h5, h6 {
   from { opacity: 0; transform: translate(-50%, 24px); }
   to   { opacity: 1; transform: translate(-50%, 0); }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   ADMIN SIDE ONLY: HIGH-READABILITY ENHANCEMENTS FOR LED / PROJECTOR
+   ═══════════════════════════════════════════════════════════════════ */
+.admin-option-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: var(--clr-surface-2);
+  border-radius: var(--radius-md);
+  font-size: 16px;
+  font-weight: 600;
+  border: 1px solid var(--clr-border);
+  transition: all 0.25s ease;
+}
+
+.admin-option-letter {
+  color: var(--clr-primary);
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.admin-option-box.correct-answer-highlight {
+  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%) !important;
+  border: 2px solid #10b981 !important;
+  color: #065f46 !important;
+  font-weight: 700 !important;
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.25) !important;
+  transform: scale(1.015);
+}
+
+.admin-option-box.correct-answer-highlight .admin-option-letter {
+  color: #047857 !important;
+}
+
+/* Scaled Typography for Admin Command Center */
+.dashboard-page {
+  font-size: 15px;
+}
+
+.dashboard-page h1 {
+  font-size: 24px !important;
+  font-weight: 900 !important;
+}
+
+.dashboard-page .tab-btn {
+  font-size: 16px !important;
+  padding: 12px 22px !important;
+  font-weight: 700 !important;
+}
+
+.dashboard-page .modern-table th {
+  font-size: 15px !important;
+  padding: 14px 18px !important;
+  font-weight: 800 !important;
+}
+
+.dashboard-page .modern-table td {
+  font-size: 15px !important;
+  padding: 14px 18px !important;
+}
+
+/* Projector Mode LED Scaled Elements */
+.projector-mode .modern-table th {
+  font-size: 18px !important;
+  padding: 16px 22px !important;
+  font-weight: 800 !important;
+}
+
+.projector-mode .modern-table td {
+  font-size: 18px !important;
+  padding: 16px 22px !important;
+}
+
+.projector-mode .podium-column.rank-1 .podium-name {
+  font-size: 24px !important;
+  font-weight: 900 !important;
+}
+
+.projector-mode .podium-column.rank-1 .podium-avatar {
+  width: 82px !important;
+  height: 82px !important;
+  font-size: 28px !important;
+}
+
+.projector-mode .podium-column.rank-1 .podium-score-pill {
+  font-size: 18px !important;
+  padding: 6px 16px !important;
+}
+
+.projector-mode .podium-column.rank-2 .podium-avatar,
+.projector-mode .podium-column.rank-3 .podium-avatar {
+  width: 68px !important;
+  height: 68px !important;
+  font-size: 22px !important;
+}
+
+.projector-mode .podium-column.rank-2 .podium-name,
+.projector-mode .podium-column.rank-3 .podium-name {
+  font-size: 20px !important;
+  font-weight: 800 !important;
+}
+
+.projector-mode .podium-column.rank-2 .podium-score-pill,
+.projector-mode .podium-column.rank-3 .podium-score-pill {
+  font-size: 16px !important;
+  padding: 5px 14px !important;
+}
+
+.projector-mode .podium-course {
+  font-size: 15px !important;
+}
+
+.projector-mode .podium-runners-strip {
+  font-size: 15px !important;
+  padding: 12px 18px !important;
+}
+
+.projector-mode .podium-runner-badge {
+  font-size: 14px !important;
+  padding: 6px 14px !important;
+}
+

@@ -59,3 +59,55 @@ export const statusColor = (status) => {
   };
   return map[status] || '#94a3b8';
 };
+
+// Check if an option matches the correct answer (handles letters 'A'-'D', option text, and prefixed forms)
+export const isCorrectOption = (opt, index, correctAnswer) => {
+  if (!correctAnswer || opt === undefined || opt === null) return false;
+  const letters = ['A', 'B', 'C', 'D'];
+  const letter = letters[index] || '';
+  const normCorrect = String(correctAnswer).trim().toLowerCase();
+  const normOpt = String(opt).trim().toLowerCase();
+  const normLetter = letter.toLowerCase();
+
+  // 1. Direct letter match (e.g. 'A', 'B', 'C', 'D')
+  if (normCorrect === normLetter) return true;
+
+  // 2. Letter with prefix or punctuation (e.g. 'Option A', 'Choice A', 'A)', 'A.', 'A -')
+  if (
+    normCorrect === `option ${normLetter}` ||
+    normCorrect === `choice ${normLetter}` ||
+    normCorrect === `${normLetter})` ||
+    normCorrect === `${normLetter}.` ||
+    normCorrect.startsWith(`${normLetter} `) ||
+    normCorrect.startsWith(`${normLetter})`) ||
+    normCorrect.startsWith(`${normLetter}.`)
+  ) {
+    return true;
+  }
+
+  // 3. Exact full string match
+  if (normOpt === normCorrect) return true;
+
+  // 4. Normalized comparison (stripping prefixes like 'A)', 'Option A:', etc.)
+  const cleanCorrect = normCorrect
+    .replace(/^(option\s*|choice\s*)/i, '')
+    .replace(/^([a-d])[).\s-]+/i, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const cleanOpt = normOpt
+    .replace(/^(option\s*|choice\s*)/i, '')
+    .replace(/^([a-d])[).\s-]+/i, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (cleanCorrect && cleanOpt && cleanCorrect === cleanOpt) return true;
+
+  // 5. Option starts with letter prefix and matches
+  if (normOpt.startsWith(`${normLetter})`) || normOpt.startsWith(`${normLetter}.`)) {
+    if (cleanOpt === cleanCorrect) return true;
+  }
+
+  return false;
+};
+

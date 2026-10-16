@@ -52,14 +52,20 @@ const scheduleRoundTimeout = (io, event, remainingMs) => {
       await freshEvent.save();
       closeActiveRound(freshEvent.currentRoundNumber);
 
+      const question = await Question.findById(freshEvent.currentQuestionId);
+
       io.emit('round:closed', {
         roundNumber: freshEvent.currentRoundNumber,
+        correctAnswer: question ? question.correctAnswer : null,
         message: 'Time is up! Round closed.',
       });
 
-      // Build and broadcast round leaderboard
-      const question = await Question.findById(freshEvent.currentQuestionId);
+      // Build and broadcast round leaderboard & reveal answer to admin
       if (question) {
+        io.to('admins').emit('question:answer_reveal', {
+          roundNumber: freshEvent.currentRoundNumber,
+          correctAnswer: question.correctAnswer,
+        });
         await broadcastRoundLeaderboard(io, freshEvent, question);
       }
 
@@ -342,10 +348,11 @@ const initSocketHandlers = (io) => {
         // Send question (without answers) to all participants
         io.to('participants').emit('question:new', payload);
 
-        // Send question to admin (answers hidden as requested)
+        // Send question to admin (with correctAnswer cached, revealed after round timeout)
         io.to('admins').emit('question:admin', {
           ...payload,
           points: question.points,
+          correctAnswer: question.correctAnswer,
         });
 
         await broadcastGameState(io, event);
@@ -428,19 +435,21 @@ const initSocketHandlers = (io) => {
         await event.save();
         closeActiveRound(event.currentRoundNumber);
 
+        const question = await Question.findById(event.currentQuestionId);
+
         io.emit('round:closed', {
           roundNumber: event.currentRoundNumber,
+          correctAnswer: question ? question.correctAnswer : null,
           message: 'Round closed by host.',
         });
 
-        const question = await Question.findById(event.currentQuestionId);
         if (question) {
-          await broadcastRoundLeaderboard(io, event, question);
           // Reveal correct answer to admin
           io.to('admins').emit('question:answer_reveal', {
             roundNumber: event.currentRoundNumber,
             correctAnswer: question.correctAnswer,
           });
+          await broadcastRoundLeaderboard(io, event, question);
         }
 
         await broadcastGameState(io, event);

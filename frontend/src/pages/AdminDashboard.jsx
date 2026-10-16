@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import {
   API_BASE, apiFetch, getAdminToken, clearAdminToken,
-  rankIcon, fmtMs, statusColor,
+  rankIcon, fmtMs, statusColor, isCorrectOption,
 } from '../utils';
 import { useToast, useCountdown } from '../hooks';
 import {
@@ -45,23 +45,23 @@ const LivePodiumShowcase = ({
             <Icons.Trophy size={24} color="#b45309" />
           </div>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: 'var(--clr-text-h)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <h2 style={{ fontSize: isProjector ? 24 : 20, fontWeight: 800, margin: 0, color: 'var(--clr-text-h)' }}>
                 {isFinal ? '🏆 Championship Podium & Final Winners' : 'Live Rankings & Stage Podium'}
               </h2>
               {roundActive ? (
-                <span className="badge badge-success" style={{ fontSize: 11, padding: '3px 8px' }}>
+                <span className="badge badge-success" style={{ fontSize: isProjector ? 13 : 11, padding: '4px 10px' }}>
                   <span className="status-dot live" style={{ width: 6, height: 6, display: 'inline-block', marginRight: 4 }} />
                   Round {currentRound} Live
                 </span>
               ) : (
-                <span className="badge badge-purple" style={{ fontSize: 11, padding: '3px 8px' }}>
-                  <Icons.Flame size={12} color="#a855f7" />
+                <span className="badge badge-purple" style={{ fontSize: isProjector ? 13 : 11, padding: '4px 10px' }}>
+                  <Icons.Flame size={13} color="#a855f7" />
                   {activeLeaderboardData.length > 0 ? `${activeLeaderboardData.length} Contenders Ranked` : 'Waiting for Submissions'}
                 </span>
               )}
             </div>
-            <p style={{ fontSize: 12, color: 'var(--clr-text)', margin: '2px 0 0 0' }}>
+            <p style={{ fontSize: isProjector ? 14 : 12, color: 'var(--clr-text)', margin: '3px 0 0 0' }}>
               {isFinal
                 ? 'Official tournament champions crowned by total points & response speed'
                 : `Live standings after Round ${currentRound} of ${totalRounds}`}
@@ -249,6 +249,11 @@ export default function AdminDashboard() {
   const [roundLeaderboard, setRoundLeaderboard] = useState([]);
   const [finalLeaderboard, setFinalLeaderboard] = useState([]);
 
+  // Correct answer reveal on round timeout / close (hold 2 seconds before leaderboard)
+  const [revealedAnswer, setRevealedAnswer] = useState(null);
+  const [showingAnswerReveal, setShowingAnswerReveal] = useState(false);
+  const revealTimerRef = useRef(null);
+
   // Questions tab (Answers hidden)
   const [questions, setQuestions] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -273,6 +278,31 @@ export default function AdminDashboard() {
     gameState?.roundTimer?.roundStatus === 'active' ? gameState?.roundTimer?.deadlineAt : null,
     null
   );
+
+  // Current question ref to prevent stale closures
+  const currentQuestionRef = useRef(null);
+  useEffect(() => {
+    currentQuestionRef.current = currentQuestion;
+  }, [currentQuestion]);
+
+  // Auto-reveal when round countdown reaches 0
+  useEffect(() => {
+    const isRoundActive = gameState?.roundTimer?.roundStatus === 'active';
+    if (isRoundActive && remaining === 0 && currentQuestion && !showingAnswerReveal) {
+      const answer = currentQuestion.correctAnswer;
+      if (answer && !revealedAnswer) {
+        setRevealedAnswer(answer);
+        setShowingAnswerReveal(true);
+        setProjectorViewMode('question');
+        if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
+        revealTimerRef.current = setTimeout(() => {
+          setShowingAnswerReveal(false);
+          revealTimerRef.current = null;
+          setProjectorViewMode('leaderboard');
+        }, 2000);
+      }
+    }
+  }, [remaining, gameState?.roundTimer?.roundStatus, currentQuestion, showingAnswerReveal, revealedAnswer]);
 
   // ── Auth guard & initial load ────────────────────────────────────
   useEffect(() => {
@@ -344,6 +374,12 @@ export default function AdminDashboard() {
     });
 
     socket.on('question:admin', (q) => {
+      if (revealTimerRef.current) {
+        clearTimeout(revealTimerRef.current);
+        revealTimerRef.current = null;
+      }
+      setRevealedAnswer(null);
+      setShowingAnswerReveal(false);
       setCurrentQuestion(q);
       setSubmissions([]);
       setRoundLeaderboard([]);
@@ -361,14 +397,41 @@ export default function AdminDashboard() {
       }));
     });
 
-    socket.on('round:closed', ({ roundNumber }) => {
-      showToast(`Round ${roundNumber} closed. Displaying live standings!`, 'info');
-      setProjectorViewMode('leaderboard'); // Automatically switch projector to leaderboard
+    const triggerAnswerReveal = (correctAnswer) => {
+      const targetAns = correctAnswer || currentQuestionRef.current?.correctAnswer;
+      if (targetAns) {
+        setRevealedAnswer(targetAns);
+      }
+      setShowingAnswerReveal(true);
+      setProjectorViewMode('question'); // Keep question view active on LED panel
+
+      if (revealTimerRef.current) {
+        clearTimeout(revealTimerRef.current);
+      }
+
+      // Display correct answer highlighted in green for 2 seconds, then transition to leaderboard!
+      revealTimerRef.current = setTimeout(() => {
+        setShowingAnswerReveal(false);
+        revealTimerRef.current = null;
+        setProjectorViewMode('leaderboard');
+      }, 2000);
+    };
+
+    socket.on('round:closed', ({ roundNumber, correctAnswer }) => {
+      showToast(`Round ${roundNumber} closed! Correct answer revealed...`, 'info');
+      triggerAnswerReveal(correctAnswer);
+    });
+
+    socket.on('question:answer_reveal', ({ correctAnswer }) => {
+      triggerAnswerReveal(correctAnswer);
     });
 
     socket.on('leaderboard:round', ({ roundNumber, leaderboard }) => {
       setRoundLeaderboard(leaderboard);
-      setProjectorViewMode('leaderboard');
+      // If we are currently holding the 2-second answer reveal, let the reveal timer transition
+      if (!revealTimerRef.current) {
+        setProjectorViewMode('leaderboard');
+      }
       showToast(`Round ${roundNumber} leaderboard updated!`, 'success');
     });
 
@@ -398,6 +461,12 @@ export default function AdminDashboard() {
     });
 
     socket.on('game:reset', () => {
+      if (revealTimerRef.current) {
+        clearTimeout(revealTimerRef.current);
+        revealTimerRef.current = null;
+      }
+      setRevealedAnswer(null);
+      setShowingAnswerReveal(false);
       setCurrentQuestion(null);
       setSubmissions([]);
       setRoundLeaderboard([]);
@@ -408,7 +477,10 @@ export default function AdminDashboard() {
       apiFetch('/api/events/current').then((d) => { if (d.success) setEvent(d.event); });
     });
 
-    return () => socket.disconnect();
+    return () => {
+      if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
+      socket.disconnect();
+    };
   }, [activeTab, fetchParticipants, showToast]);
 
   // ── Admin socket actions ─────────────────────────────────────────
@@ -529,13 +601,13 @@ export default function AdminDashboard() {
   });
 
   const activeLeaderboardData = finalLeaderboard.length > 0 ? finalLeaderboard : roundLeaderboard;
-  const topThree = activeLeaderboardData.slice(0, 3);
+
 
   // ═════════════════════════════════════════════════════════════════
   // FULLSCREEN PROJECTOR / ARENA VIEW ("Quiz Control Flow niche aa jaye")
   // ═════════════════════════════════════════════════════════════════
   if (isProjectorMode) {
-    const showQuestionView = (projectorViewMode === 'question' || (projectorViewMode === 'auto' && roundActive)) && currentQuestion;
+    const showQuestionView = (projectorViewMode === 'question' || (projectorViewMode === 'auto' && roundActive) || showingAnswerReveal) && currentQuestion;
     const letters = ['A', 'B', 'C', 'D'];
 
     return (
@@ -544,28 +616,29 @@ export default function AdminDashboard() {
 
         {/* Top Minimal Bar */}
         <div className="projector-topbar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <span className="badge badge-primary">
-              <Icons.QrCode size={14} /> Silicon Sorcerer Projector
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <span className="badge badge-primary" style={{ fontSize: 16, padding: '7px 16px', fontWeight: 800 }}>
+              <Icons.QrCode size={16} /> Silicon Sorcerer Projector
             </span>
-            <span className="badge badge-neutral">
+            <span className="badge badge-neutral" style={{ fontSize: 15, padding: '7px 14px', fontWeight: 700 }}>
               Round {currentRound} of {totalRounds}
             </span>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span className="badge badge-success">
-              <Icons.Users size={14} /> {stats.participantCount} Students Live
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <span className="badge badge-success" style={{ fontSize: 15, padding: '7px 16px', fontWeight: 800 }}>
+              <Icons.Users size={16} /> {stats.participantCount} Students Live
             </span>
             <button
               className="btn btn-secondary btn-sm"
+              style={{ fontSize: 15, padding: '8px 16px' }}
               onClick={() => setProjectorViewMode(showQuestionView ? 'leaderboard' : 'question')}
             >
-              {showQuestionView ? <Icons.Trophy size={14} /> : <Icons.HelpCircle size={14} />}
+              {showQuestionView ? <Icons.Trophy size={16} /> : <Icons.HelpCircle size={16} />}
               <span>{showQuestionView ? 'Show Leaderboard' : 'Show Question'}</span>
             </button>
-            <button className="btn btn-secondary btn-sm" onClick={toggleProjectorMode} title="Exit Fullscreen Projector">
-              <Icons.XCircle size={16} />
+            <button className="btn btn-secondary btn-sm" style={{ fontSize: 15, padding: '8px 16px' }} onClick={toggleProjectorMode} title="Exit Fullscreen Projector">
+              <Icons.XCircle size={18} />
               <span>Exit Projector</span>
             </button>
           </div>
@@ -576,23 +649,44 @@ export default function AdminDashboard() {
           {showQuestionView ? (
             /* ── BIG QUESTION VIEW ── */
             <div className="projector-question-card">
+              {showingAnswerReveal && (
+                <div className="projector-reveal-banner">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <Icons.CheckCircle size={26} color="#ffffff" />
+                    <span style={{ fontSize: 20, fontWeight: 900, letterSpacing: '0.04em' }}>
+                      CORRECT ANSWER REVEALED
+                    </span>
+                  </div>
+                  <div className="projector-reveal-countdown">
+                    <span>Showing Leaderboard in 2s...</span>
+                    <div className="reveal-progress-bar" />
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <span className="badge badge-primary" style={{ fontSize: 14, padding: '6px 14px' }}>
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <span className="badge badge-primary" style={{ fontSize: 18, padding: '8px 18px', fontWeight: 800 }}>
                     Round {currentQuestion.roundNumber} of {totalRounds}
                   </span>
                   {currentQuestion.category && (
-                    <span className="badge badge-purple" style={{ fontSize: 14, padding: '6px 14px' }}>
+                    <span className="badge badge-purple" style={{ fontSize: 18, padding: '8px 18px', fontWeight: 700 }}>
                       {currentQuestion.category}
                     </span>
                   )}
                 </div>
 
-                {roundActive && (
+                {roundActive && !showingAnswerReveal && (
                   <TimerCircle
                     remainingMs={remaining}
                     totalMs={(currentQuestion.timeLimitSeconds || 20) * 1000}
+                    large={true}
                   />
+                )}
+                {showingAnswerReveal && (
+                  <span className="badge badge-success" style={{ fontSize: 18, padding: '8px 18px', fontWeight: 800 }}>
+                    ⏱ Time is up!
+                  </span>
                 )}
               </div>
 
@@ -604,20 +698,35 @@ export default function AdminDashboard() {
               {/* 4 Big Options Grid */}
               {Array.isArray(currentQuestion.options) && currentQuestion.options.length > 0 && (
                 <div className="projector-options-grid">
-                  {currentQuestion.options.map((opt, i) => (
-                    <div key={i} className="projector-option-box">
-                      <span className="projector-option-letter">{letters[i]}</span>
-                      <span>{opt}</span>
-                    </div>
-                  ))}
+                  {currentQuestion.options.map((opt, i) => {
+                    const isCorrect = isCorrectOption(opt, i, revealedAnswer || currentQuestion.correctAnswer);
+                    const isHighlight = (showingAnswerReveal || revealedAnswer) && isCorrect;
+                    const isDimmed = (showingAnswerReveal || revealedAnswer) && !isCorrect;
+
+                    return (
+                      <div
+                        key={i}
+                        className={`projector-option-box${isHighlight ? ' correct-answer-highlight' : ''}${isDimmed ? ' dimmed-option' : ''}`}
+                      >
+                        <span className="projector-option-letter">{letters[i]}</span>
+                        <span style={{ flex: 1 }}>{opt}</span>
+                        {isHighlight && (
+                          <span className="correct-indicator">
+                            <Icons.CheckCircle size={22} color="#ffffff" />
+                            <span>CORRECT</span>
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--clr-border)', paddingTop: 18 }}>
-                <span style={{ fontSize: 14, color: 'var(--clr-text)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '2px solid var(--clr-border)', paddingTop: 20 }}>
+                <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--clr-text-h)' }}>
                   ⏱ 20s Round Time Limit · 🏅 {currentQuestion.points || 10} Points
                 </span>
-                <span className="badge badge-success" style={{ fontSize: 13, padding: '6px 12px' }}>
+                <span className="badge badge-success" style={{ fontSize: 16, padding: '8px 18px', fontWeight: 800 }}>
                   📩 {stats.totalSubmissions} Submissions Live ({stats.correctCount} Correct)
                 </span>
               </div>
@@ -641,7 +750,7 @@ export default function AdminDashboard() {
                 <table className="modern-table">
                   <thead>
                     <tr>
-                      <th style={{ width: 80 }}>Rank</th>
+                      <th style={{ width: 90 }}>Rank</th>
                       <th>Participant Name</th>
                       <th>Course / Department</th>
                       <th>Total Score</th>
@@ -653,19 +762,19 @@ export default function AdminDashboard() {
                     {activeLeaderboardData.map((item) => (
                       <tr key={item.participantId}>
                         <td>
-                          <span style={{ fontWeight: 800, fontSize: 15, color: item.rank <= 3 ? '#4f46e5' : 'inherit' }}>
+                          <span style={{ fontWeight: 900, fontSize: 19, color: item.rank <= 3 ? '#4f46e5' : 'inherit' }}>
                             #{item.rank}
                           </span>
                         </td>
-                        <td><strong>{item.fullName}</strong></td>
-                        <td>{item.course}</td>
+                        <td><strong style={{ fontSize: 18 }}>{item.fullName}</strong></td>
+                        <td style={{ fontSize: 16 }}>{item.course}</td>
                         <td>
-                          <span className="badge badge-success" style={{ fontSize: 13 }}>
+                          <span className="badge badge-success" style={{ fontSize: 16, padding: '6px 14px', fontWeight: 800 }}>
                             {item.totalScore ?? item.pointsAwarded ?? 0} pts
                           </span>
                         </td>
-                        <td>{item.correctCount ?? (item.isCorrect ? 1 : 0)} correct</td>
-                        <td>{fmtMs(item.totalResponseTimeMs ?? item.responseTimeMs ?? 0)}</td>
+                        <td style={{ fontSize: 16 }}>{item.correctCount ?? (item.isCorrect ? 1 : 0)} correct</td>
+                        <td style={{ fontSize: 16 }}>{fmtMs(item.totalResponseTimeMs ?? item.responseTimeMs ?? 0)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -677,9 +786,9 @@ export default function AdminDashboard() {
 
         {/* ── LOWER FLOATING DOCK: QUIZ CONTROL FLOW ("Quiz Control Flow niche aa jaye") ── */}
         <div className="projector-dock">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingRight: 8, borderRight: '1px solid var(--clr-border)' }}>
-            <span className={`status-dot ${roundActive ? 'live' : 'paused'}`} />
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--clr-text-h)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingRight: 12, borderRight: '1px solid var(--clr-border)' }}>
+            <span className={`status-dot ${roundActive ? 'live' : 'paused'}`} style={{ width: 10, height: 10 }} />
+            <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--clr-text-h)' }}>
               {roundActive ? `Round ${currentRound} Active` : isCompleted ? 'Completed' : `Ready for Round ${currentRound + 1}`}
             </span>
           </div>
@@ -688,39 +797,40 @@ export default function AdminDashboard() {
             <>
               <button
                 id="dock-btn-next-question"
-                className="btn btn-primary btn-sm"
+                className="btn btn-primary"
+                style={{ fontSize: 15, padding: '9px 18px', fontWeight: 700 }}
                 onClick={nextQuestion}
                 disabled={roundActive || currentRound >= totalRounds}
               >
-                <Icons.Play size={14} />
+                <Icons.Play size={16} />
                 <span>Publish Round {currentRound + 1} (20s)</span>
               </button>
 
               {roundActive && (
-                <button id="dock-btn-close-round" className="btn btn-danger btn-sm" onClick={closeRound}>
-                  <Icons.Square size={14} />
+                <button id="dock-btn-close-round" className="btn btn-danger" style={{ fontSize: 15, padding: '9px 18px', fontWeight: 700 }} onClick={closeRound}>
+                  <Icons.Square size={16} />
                   <span>Close Round</span>
                 </button>
               )}
 
               {isLive ? (
-                <button className="btn btn-secondary btn-sm" onClick={pauseGame}>
-                  <Icons.Pause size={14} /> Pause
+                <button className="btn btn-secondary" style={{ fontSize: 15, padding: '9px 18px' }} onClick={pauseGame}>
+                  <Icons.Pause size={16} /> Pause
                 </button>
               ) : (
-                <button className="btn btn-success btn-sm" onClick={resumeGame}>
-                  <Icons.Play size={14} /> Resume
+                <button className="btn btn-success" style={{ fontSize: 15, padding: '9px 18px' }} onClick={resumeGame}>
+                  <Icons.Play size={16} /> Resume
                 </button>
               )}
 
-              <button className="btn btn-outline-danger btn-sm" onClick={endGame}>
-                <Icons.Trophy size={14} /> End Quiz
+              <button className="btn btn-outline-danger" style={{ fontSize: 15, padding: '9px 18px' }} onClick={endGame}>
+                <Icons.Trophy size={16} /> End Quiz
               </button>
             </>
           )}
 
-          <button className="btn btn-secondary btn-sm" onClick={toggleProjectorMode} title="Close Projector View">
-            <Icons.XCircle size={15} /> Exit
+          <button className="btn btn-secondary" style={{ fontSize: 15, padding: '9px 18px' }} onClick={toggleProjectorMode} title="Close Projector View">
+            <Icons.XCircle size={16} /> Exit
           </button>
         </div>
       </div>
@@ -949,41 +1059,79 @@ export default function AdminDashboard() {
 
             {/* Live Question & Submissions Column */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-              {/* Current Question Display (Without answers) */}
+              {/* Current Question Display */}
               {currentQuestion ? (
-                <div className="glass-card" style={{ padding: 24 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <span className="badge badge-primary">Round {currentQuestion.roundNumber} of {totalRounds}</span>
-                      {currentQuestion.category && <span className="badge badge-purple">{currentQuestion.category}</span>}
+                <div className="glass-card" style={{ padding: 26 }}>
+                  {showingAnswerReveal && (
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '12px 18px', marginBottom: 16,
+                      background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                      borderRadius: 'var(--radius-md)', color: '#ffffff',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800, fontSize: 15 }}>
+                        <Icons.CheckCircle size={20} color="#ffffff" />
+                        <span>CORRECT ANSWER REVEALED</span>
+                      </div>
+                      <span style={{ fontSize: 13, background: 'rgba(0,0,0,0.2)', padding: '3px 10px', borderRadius: 999, fontWeight: 700 }}>
+                        Showing Leaderboard in 2s...
+                      </span>
                     </div>
-                    {roundActive && (
-                      <span className="badge badge-success">
-                        <Icons.Clock size={12} /> {Math.ceil(remaining / 1000)}s Remaining
+                  )}
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      <span className="badge badge-primary" style={{ fontSize: 14, padding: '6px 12px', fontWeight: 700 }}>
+                        Round {currentQuestion.roundNumber} of {totalRounds}
+                      </span>
+                      {currentQuestion.category && (
+                        <span className="badge badge-purple" style={{ fontSize: 14, padding: '6px 12px' }}>
+                          {currentQuestion.category}
+                        </span>
+                      )}
+                    </div>
+                    {roundActive && !showingAnswerReveal && (
+                      <span className="badge badge-success" style={{ fontSize: 14, padding: '6px 12px', fontWeight: 700 }}>
+                        <Icons.Clock size={14} /> {Math.ceil(remaining / 1000)}s Remaining
+                      </span>
+                    )}
+                    {showingAnswerReveal && (
+                      <span className="badge badge-success" style={{ fontSize: 14, padding: '6px 12px', fontWeight: 800 }}>
+                        ⏱ Time Up!
                       </span>
                     )}
                   </div>
 
-                  <h3 style={{ fontSize: 18, color: 'var(--clr-text-h)', marginBottom: 16 }}>
+                  <h3 style={{ fontSize: 22, color: 'var(--clr-text-h)', marginBottom: 18, fontWeight: 800, lineHeight: 1.35 }}>
                     {currentQuestion.questionText}
                   </h3>
 
                   {/* 4 Options preview */}
                   {Array.isArray(currentQuestion.options) && currentQuestion.options.length > 0 && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
-                      {currentQuestion.options.map((opt, i) => (
-                        <div key={i} style={{
-                          padding: '10px 14px', background: 'var(--clr-surface-2)',
-                          borderRadius: 'var(--radius-md)', fontSize: 13, border: '1px solid var(--clr-border)',
-                        }}>
-                          <strong style={{ color: 'var(--clr-primary)', marginRight: 8 }}>{['A', 'B', 'C', 'D'][i]}:</strong>
-                          <span>{opt}</span>
-                        </div>
-                      ))}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 18 }}>
+                      {currentQuestion.options.map((opt, i) => {
+                        const isCorrect = isCorrectOption(opt, i, revealedAnswer || currentQuestion.correctAnswer);
+                        const isHighlight = (showingAnswerReveal || revealedAnswer) && isCorrect;
+
+                        return (
+                          <div
+                            key={i}
+                            className={`admin-option-box${isHighlight ? ' correct-answer-highlight' : ''}`}
+                          >
+                            <strong className="admin-option-letter">{['A', 'B', 'C', 'D'][i]}:</strong>
+                            <span style={{ flex: 1 }}>{opt}</span>
+                            {isHighlight && (
+                              <span className="badge badge-success" style={{ fontSize: 12, padding: '3px 8px', fontWeight: 800 }}>
+                                ✓ Correct
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
 
-                  <div style={{ display: 'flex', gap: 16, fontSize: 13, color: 'var(--clr-text)' }}>
+                  <div style={{ display: 'flex', gap: 18, fontSize: 15, fontWeight: 600, color: 'var(--clr-text)' }}>
                     <span>⏱ 20s Limit</span>
                     <span>🏅 {currentQuestion.points || 10} Points</span>
                     <span>📩 {stats.totalSubmissions} Submissions ({stats.correctCount} Correct)</span>
