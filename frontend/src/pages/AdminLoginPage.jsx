@@ -120,8 +120,6 @@ export default function AdminLoginPage() {
               gap: 8,
               alignItems: 'center',
             }}>
-              <Icons.ShieldAlert size={14} color="var(--clr-primary)" />
-              <span>Default login: <strong>admin</strong> / <strong>Admin@123</strong></span>
             </div>
 
             <button
