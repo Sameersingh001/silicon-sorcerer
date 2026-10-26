@@ -64,12 +64,37 @@ const parseQuestionSheet = (buffer, mimetype) => {
     const timeLimitSeconds = parseInt(row.time_limit_seconds) || 20;
     const category = String(row.category || 'General').trim();
 
-    // Check for 4 options
+    const questionImage = String(
+      row.question_image || row.question_img || row.image_url || row.image || row.img || ''
+    ).trim();
+
+    // Check for 4 options (support both text and image URLs, or combined columns)
+    const buildOption = (text, img) => {
+      const t = String(text || '').trim();
+      const i = String(img || '').trim();
+      if (t && i && t !== i) {
+        return `${t} | ${i}`;
+      }
+      return t || i || '';
+    };
+
     let options = [];
-    const optA = String(row.option_a || row.option_1 || row.a || '').trim();
-    const optB = String(row.option_b || row.option_2 || row.b || '').trim();
-    const optC = String(row.option_c || row.option_3 || row.c || '').trim();
-    const optD = String(row.option_d || row.option_4 || row.d || '').trim();
+    const optA = buildOption(
+      row.option_a || row.option_1 || row.a,
+      row.option_a_image || row.option_a_img || row.option_1_image
+    );
+    const optB = buildOption(
+      row.option_b || row.option_2 || row.b,
+      row.option_b_image || row.option_b_img || row.option_2_image
+    );
+    const optC = buildOption(
+      row.option_c || row.option_3 || row.c,
+      row.option_c_image || row.option_c_img || row.option_3_image
+    );
+    const optD = buildOption(
+      row.option_d || row.option_4 || row.d,
+      row.option_d_image || row.option_d_img || row.option_4_image
+    );
 
     if (optA || optB || optC || optD) {
       options = [optA, optB, optC, optD].filter(Boolean);
@@ -110,21 +135,37 @@ const parseQuestionSheet = (buffer, mimetype) => {
     // If MCQ and correctAnswer is an option letter (e.g. "A", "B", "C", "D"),
     // add both the letter and the corresponding option text to accepted answers
     if (questionType === 'mcq' && options.length > 0) {
-      const letterIndex = { a: 0, b: 1, c: 2, d: 3 }[correctAnswer.toLowerCase()];
+      const cleanLetter = correctAnswer.toLowerCase().replace(/^(option\s*|choice\s*)/i, '').trim();
+      const letterIndex = { a: 0, b: 1, c: 2, d: 3 }[cleanLetter];
+      const letters = ['A', 'B', 'C', 'D'];
+
       if (letterIndex !== undefined && options[letterIndex]) {
+        acceptedAnswers.push(letters[letterIndex]);
         acceptedAnswers.push(options[letterIndex]);
+        // If option contains pipe (text | image), also accept the text and image parts
+        if (options[letterIndex].includes('|')) {
+          const parts = options[letterIndex].split('|').map((s) => s.trim());
+          parts.forEach((p) => {
+            if (p) acceptedAnswers.push(p);
+          });
+        }
       }
-      // Also if correctAnswer is option text, add the letter (A, B, C, D)
-      const matchedIdx = options.findIndex((opt) => opt.toLowerCase() === correctAnswer.toLowerCase());
-      if (matchedIdx !== -1) {
-        const letters = ['A', 'B', 'C', 'D'];
-        acceptedAnswers.push(letters[matchedIdx]);
-      }
+
+      // Also if correctAnswer matches option text or part
+      options.forEach((opt, idx) => {
+        const parts = opt.split('|').map((s) => s.trim().toLowerCase());
+        if (opt.toLowerCase() === correctAnswer.toLowerCase() || parts.includes(correctAnswer.toLowerCase())) {
+          acceptedAnswers.push(letters[idx]);
+          acceptedAnswers.push(opt);
+          parts.forEach((p) => acceptedAnswers.push(p));
+        }
+      });
     }
 
     questions.push({
       roundNumber,
       questionText,
+      questionImage,
       options,
       questionType,
       correctAnswer,

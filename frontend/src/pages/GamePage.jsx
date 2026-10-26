@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
-import { API_BASE, getParticipantSession, clearParticipantSession, apiFetch, fmtMs } from '../utils';
+import { API_BASE, getParticipantSession, clearParticipantSession, apiFetch, fmtMs, parseOptionContent } from '../utils';
 import { useToast, useCountdown } from '../hooks';
 import { Toast, Spinner, TimerCircle, IPhoneFullscreenHelper, IPhoneBannerPrompt } from '../components';
 import { Icons } from '../Icons';
@@ -32,6 +32,7 @@ export default function GamePage() {
   const [roundLeaderboard, setRoundLeaderboard] = useState([]);
   const [connected, setConnected] = useState(false);
   const [showIosGuide, setShowIosGuide] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null);
 
   // Anti-cheat warning state
   const [cheatWarning, setCheatWarning] = useState(null);
@@ -353,6 +354,7 @@ export default function GamePage() {
   if (phase === PHASE.QUESTION && question) {
     const letters = ['A', 'B', 'C', 'D'];
     const hasOptions = Array.isArray(question.options) && question.options.length >= 2;
+    const hasImageOptions = hasOptions && question.options.some((opt) => parseOptionContent(opt).hasImage);
     const isCompactScreen = typeof window !== 'undefined' && (window.innerWidth < 640 || window.innerHeight < 740);
 
     return (
@@ -436,33 +438,80 @@ export default function GamePage() {
               </h2>
             </div>
 
-            {/* 4 Interactive Options Grid with instant tactile and visual feedback */}
-            {hasOptions ? (
-              <div className="options-grid">
-                {question.options.map((opt, idx) => {
-                  const letter = letters[idx] || `${idx + 1}`;
-                  const isSelected = selectedOption === opt;
-                  return (
-                    <button
-                      key={idx}
-                      type="button"
-                      className={`option-btn opt-${idx % 4}${isSelected ? ' selected' : ''}${submitting && isSelected ? ' submitting' : ''}`}
-                      onClick={() => handleSelectOption(opt)}
-                      disabled={submitting}
-                    >
-                      <span className="option-letter">{letter}</span>
-                      <span style={{ flex: 1, wordBreak: 'break-word' }}>{opt}</span>
-                      {submitting && isSelected ? (
-                        <Spinner size="sm" />
-                      ) : isSelected ? (
-                        <span style={{ display: 'inline-flex', color: '#fff', marginLeft: 4 }}>
-                          <Icons.Check size={18} />
-                        </span>
-                      ) : null}
-                    </button>
-                  );
-                })}
+            {/* Optional Question Image (Click to Expand Lightbox) */}
+            {question.questionImage && (
+              <div className="question-image-box">
+                <img
+                  src={question.questionImage}
+                  alt="Question Diagram"
+                  className="question-image-preview"
+                  onClick={() => setPreviewImage(question.questionImage)}
+                  title="Click to view full image"
+                />
               </div>
+            )}
+
+            {/* 4 Interactive Options Grid (Supports Image Options & Text Options) */}
+            {hasOptions ? (
+              hasImageOptions ? (
+                <div className="image-options-grid">
+                  {question.options.map((opt, idx) => {
+                    const { text, image, hasImage } = parseOptionContent(opt);
+                    const letter = letters[idx] || `${idx + 1}`;
+                    const isSelected = selectedOption === opt;
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        className={`image-option-btn opt-${idx % 4}${isSelected ? ' selected' : ''}${submitting && isSelected ? ' submitting' : ''}`}
+                        onClick={() => handleSelectOption(opt)}
+                        disabled={submitting}
+                      >
+                        <span className="image-letter-badge">{letter}</span>
+                        {isSelected && (
+                          <span className="selected-check-badge">
+                            {submitting ? <Spinner size="xs" /> : <Icons.Check size={14} />}
+                          </span>
+                        )}
+                        {hasImage && (
+                          <div className="image-wrapper">
+                            <img src={image} alt={`Option ${letter}`} loading="lazy" />
+                          </div>
+                        )}
+                        {text && (
+                          <span className="image-caption">{text}</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="options-grid">
+                  {question.options.map((opt, idx) => {
+                    const letter = letters[idx] || `${idx + 1}`;
+                    const isSelected = selectedOption === opt;
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        className={`option-btn opt-${idx % 4}${isSelected ? ' selected' : ''}${submitting && isSelected ? ' submitting' : ''}`}
+                        onClick={() => handleSelectOption(opt)}
+                        disabled={submitting}
+                      >
+                        <span className="option-letter">{letter}</span>
+                        <span style={{ flex: 1, wordBreak: 'break-word' }}>{opt}</span>
+                        {submitting && isSelected ? (
+                          <Spinner size="sm" />
+                        ) : isSelected ? (
+                          <span style={{ display: 'inline-flex', color: '#fff', marginLeft: 4 }}>
+                            <Icons.Check size={18} />
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              )
             ) : (
               /* Fallback Text Input */
               <form onSubmit={(e) => { e.preventDefault(); submitAnswer(); }} style={{ display: 'flex', gap: 10 }}>
@@ -497,6 +546,22 @@ export default function GamePage() {
             </div>
           </div>
         </div>
+
+        {/* Lightbox Modal for Question Image */}
+        {previewImage && (
+          <div className="image-modal-backdrop" onClick={() => setPreviewImage(null)}>
+            <div className="image-modal-content" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                className="image-modal-close"
+                onClick={() => setPreviewImage(null)}
+              >
+                ✕
+              </button>
+              <img src={previewImage} alt="Expanded Preview" />
+            </div>
+          </div>
+        )}
       </div>
     );
   }

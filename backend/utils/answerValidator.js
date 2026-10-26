@@ -27,7 +27,21 @@ const validateAnswer = (submittedAnswer, correctAnswer, acceptedAnswers = []) =>
   const correctNorm = normalizeAnswer(correctAnswer);
   if (normalized === correctNorm) return true;
 
-  return acceptedAnswers.some((accepted) => normalizeAnswer(accepted) === normalized);
+  // Check if correctAnswer has pipe (e.g., text | url)
+  if (correctAnswer && String(correctAnswer).includes('|')) {
+    const parts = String(correctAnswer).split('|').map((p) => normalizeAnswer(p));
+    if (parts.includes(normalized)) return true;
+  }
+
+  return acceptedAnswers.some((accepted) => {
+    const normAccepted = normalizeAnswer(accepted);
+    if (normAccepted === normalized) return true;
+    if (accepted && String(accepted).includes('|')) {
+      const parts = String(accepted).split('|').map((p) => normalizeAnswer(p));
+      return parts.includes(normalized);
+    }
+    return false;
+  });
 };
 
 module.exports = { normalizeAnswer, validateAnswer };

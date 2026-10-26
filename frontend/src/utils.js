@@ -60,6 +60,45 @@ export const statusColor = (status) => {
   return map[status] || '#94a3b8';
 };
 
+// Check if a string is likely an image URL or base64 image data
+export const isImageUrl = (url) => {
+  if (!url || typeof url !== 'string') return false;
+  const str = url.trim();
+  if (/^data:image\/[a-zA-Z+]+;base64,/i.test(str)) return true;
+  if (/^https?:\/\/.*\.(png|jpg|jpeg|gif|webp|svg|bmp|avif|ico)(\?.*)?$/i.test(str)) return true;
+  if (/^https?:\/\/(images\.unsplash\.com|res\.cloudinary\.com|i\.imgur\.com|imgur\.com|postimg\.cc|i\.postimg\.cc|upload\.wikimedia\.org|drive\.google\.com|picsum\.photos|via\.placeholder\.com|placehold\.co)/i.test(str)) return true;
+  if (/^https?:\/\/.*(image|photo|img|picture|gstatic\.com\/images)/i.test(str)) return true;
+  if (/^https?:\/\/[^\s]+$/i.test(str) && !/\.(html|htm|php|asp|pdf)$/i.test(str)) {
+    return true;
+  }
+  return false;
+};
+
+// Parse option content which may contain text, image URL, or "Text | ImageURL" / "ImageURL | Text"
+export const parseOptionContent = (opt) => {
+  if (!opt || typeof opt !== 'string') {
+    return { text: String(opt || ''), image: '', hasImage: false };
+  }
+  const trimmed = opt.trim();
+
+  // If option contains pipe delimiter "Text | https://..." or "https://... | Text"
+  if (trimmed.includes('|') || trimmed.includes('::')) {
+    const parts = trimmed.split(/\||::/).map((p) => p.trim());
+    const imgPart = parts.find((p) => isImageUrl(p) || p.startsWith('http://') || p.startsWith('https://'));
+    const textPart = parts.find((p) => p !== imgPart) || '';
+    if (imgPart) {
+      return { text: textPart, image: imgPart, hasImage: true };
+    }
+  }
+
+  // Pure image URL
+  if (isImageUrl(trimmed)) {
+    return { text: '', image: trimmed, hasImage: true };
+  }
+
+  return { text: trimmed, image: '', hasImage: false };
+};
+
 // Check if an option matches the correct answer (handles letters 'A'-'D', option text, and prefixed forms)
 export const isCorrectOption = (opt, index, correctAnswer) => {
   if (!correctAnswer || opt === undefined || opt === null) return false;
@@ -106,6 +145,12 @@ export const isCorrectOption = (opt, index, correctAnswer) => {
   // 5. Option starts with letter prefix and matches
   if (normOpt.startsWith(`${normLetter})`) || normOpt.startsWith(`${normLetter}.`)) {
     if (cleanOpt === cleanCorrect) return true;
+  }
+
+  // 6. Handle pipe options (e.g. Text | ImageURL)
+  if (opt && String(opt).includes('|')) {
+    const parts = String(opt).split('|').map((p) => p.trim().toLowerCase());
+    if (parts.some((p) => p === normCorrect || p === cleanCorrect)) return true;
   }
 
   return false;

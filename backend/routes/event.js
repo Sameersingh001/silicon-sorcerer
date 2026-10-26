@@ -59,7 +59,7 @@ router.get('/qr', authMiddleware, async (req, res) => {
   }
 });
 
-// POST /api/events/reset - Reset event (admin only)
+// POST /api/events/reset - Full reset (deletes questions, submissions, participants)
 router.post('/reset', authMiddleware, async (req, res) => {
   try {
     const event = await getOrCreateEvent();
@@ -92,15 +92,77 @@ router.post('/reset', authMiddleware, async (req, res) => {
     const io = req.app.get('io');
     if (io) {
       io.emit('game:reset', { message: 'Event has been reset' });
+      io.emit('game:state', {
+        status: 'draft',
+        currentRoundNumber: 0,
+        totalRounds: 0,
+        roundTimer: event.roundTimer,
+      });
     }
 
     const { resetEngine } = require('../utils/submissionEngine');
     resetEngine();
 
-    res.json({ success: true, message: 'Event reset successfully' });
+    res.json({ success: true, message: 'Event reset successfully', event });
   } catch (error) {
-    console.error(error);
+    console.error('Reset error:', error);
     res.status(500).json({ success: false, message: 'Reset failed' });
+  }
+});
+
+// POST /api/events/restart - Restart quiz (keeps questions, clears submissions, resets round to 0)
+router.post('/restart', authMiddleware, async (req, res) => {
+  try {
+    const event = await getOrCreateEvent();
+    const Question = require('../models/Question');
+    const Submission = require('../models/Submission');
+    const Participant = require('../models/Participant');
+
+    // Delete previous submissions and reset participant scores
+    await Submission.deleteMany({ eventId: event._id });
+    await Participant.updateMany(
+      { eventId: event._id },
+      { $set: { totalScore: 0, totalAnswerTimeMs: 0, submissionsCount: 0, streak: 0 } }
+    );
+
+    const questionCount = await Question.countDocuments({ eventId: event._id });
+
+    event.status = questionCount > 0 ? 'ready' : 'draft';
+    event.totalRounds = questionCount;
+    event.currentRoundNumber = 0;
+    event.currentQuestionId = null;
+    event.startedAt = null;
+    event.completedAt = null;
+    event.roundTimer = {
+      questionId: null,
+      roundNumber: 0,
+      startedAt: null,
+      deadlineAt: null,
+      timeLimitSeconds: 0,
+      pausedAt: null,
+      remainingMs: null,
+      roundStatus: 'idle',
+    };
+    await event.save();
+
+    const { resetEngine } = require('../utils/submissionEngine');
+    resetEngine();
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('game:reset', { message: 'Quiz restarted from Round 1' });
+      io.emit('game:state', {
+        status: event.status,
+        currentRoundNumber: 0,
+        totalRounds: questionCount,
+        roundTimer: event.roundTimer,
+      });
+    }
+
+    res.json({ success: true, message: 'Quiz restarted successfully', event });
+  } catch (error) {
+    console.error('Restart error:', error);
+    res.status(500).json({ success: false, message: 'Restart failed' });
   }
 });
 

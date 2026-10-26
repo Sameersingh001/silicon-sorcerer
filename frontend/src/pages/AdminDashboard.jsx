@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import {
   API_BASE, apiFetch, getAdminToken, clearAdminToken,
-  rankIcon, fmtMs, statusColor, isCorrectOption,
+  rankIcon, fmtMs, statusColor, isCorrectOption, parseOptionContent,
 } from '../utils';
 import { useToast, useCountdown } from '../hooks';
 import {
@@ -11,6 +11,7 @@ import {
   BigQRModal, CheatingAlertBanner,
 } from '../components';
 import { Icons } from '../Icons';
+import * as XLSX from 'xlsx';
 import brandLogo from '../assets/logo-transparent.png';
 
 // ── Helper to extract participant initials ──────────────────────────
@@ -259,6 +260,7 @@ export default function AdminDashboard() {
   const [questions, setQuestions] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState(null);
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
 
   // Participants tab
   const [participants, setParticipants] = useState([]);
@@ -481,9 +483,55 @@ export default function AdminDashboard() {
 
   const resetEvent = async () => {
     if (!confirm('This will delete all questions, submissions and participants. Continue?')) return;
-    const d = await apiFetch('/api/events/reset', { method: 'POST' });
-    if (d.success) showToast('Event reset successfully', 'success');
-    else showToast(d.message || 'Reset failed', 'error');
+    try {
+      const d = await apiFetch('/api/events/reset', { method: 'POST' });
+      if (d.success) {
+        showToast('Event reset successfully', 'success');
+        setGameState({ status: 'draft', currentRoundNumber: 0, totalRounds: 0 });
+        setEvent((prev) => prev ? { ...prev, status: 'draft', currentRoundNumber: 0, totalRounds: 0, questionCount: 0, participantCount: 0 } : null);
+        setCurrentQuestion(null);
+        setRevealedAnswer(null);
+        setShowingAnswerReveal(false);
+        setRoundLeaderboard([]);
+        setFinalLeaderboard([]);
+        setActiveLeaderboardData([]);
+        setQuestions([]);
+        setParticipants([]);
+        setStats({ totalSubmissions: 0, correctCount: 0, wrongCount: 0, avgTimeMs: 0 });
+        const cur = await apiFetch('/api/events/current');
+        if (cur.success) setEvent(cur.event);
+      } else {
+        showToast(d.message || 'Reset failed', 'error');
+      }
+    } catch {
+      showToast('Reset failed: Server error', 'error');
+    }
+  };
+
+  const restartQuiz = async () => {
+    if (!confirm('Restart quiz from Round 1? (Uploaded questions will be kept, participant scores will reset). Continue?')) return;
+    try {
+      const d = await apiFetch('/api/events/restart', { method: 'POST' });
+      if (d.success) {
+        showToast('Quiz restarted from Round 1!', 'success');
+        setGameState({ status: 'ready', currentRoundNumber: 0, totalRounds: questions.length });
+        setCurrentQuestion(null);
+        setRevealedAnswer(null);
+        setShowingAnswerReveal(false);
+        setRoundLeaderboard([]);
+        setFinalLeaderboard([]);
+        setActiveLeaderboardData([]);
+        setStats({ totalSubmissions: 0, correctCount: 0, wrongCount: 0, avgTimeMs: 0 });
+        const cur = await apiFetch('/api/events/current');
+        if (cur.success) setEvent(cur.event);
+        const qData = await apiFetch('/api/questions');
+        if (qData.success) setQuestions(qData.questions || []);
+      } else {
+        showToast(d.message || 'Restart failed', 'error');
+      }
+    } catch {
+      showToast('Restart failed: Server error', 'error');
+    }
   };
 
   // ── Open Big QR ──────────────────────────────────────────────────
@@ -549,6 +597,163 @@ export default function AdminDashboard() {
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  // ── Download Excel Template (.xlsx) ──────────────────────────────
+  const handleDownloadTemplate = () => {
+    try {
+      setDownloadingTemplate(true);
+      const sampleData = [
+        {
+          round_number: 1,
+          question: 'Which of the following is the official logo of the Python programming language?',
+          question_image: '',
+          option_a: 'https://upload.wikimedia.org/wikipedia/commons/c/c3/Python-logo-notext.svg',
+          option_b: 'https://upload.wikimedia.org/wikipedia/en/3/30/Java_programming_language_logo.svg',
+          option_c: 'https://upload.wikimedia.org/wikipedia/commons/6/6a/JavaScript-logo.png',
+          option_d: 'https://upload.wikimedia.org/wikipedia/commons/2/27/PHP-logo.svg',
+          correct_answer: 'A',
+          points: 10,
+          time_limit_seconds: 20,
+          category: 'Programming Languages',
+        },
+        {
+          round_number: 2,
+          question: 'Which of these is the official mascot of the Linux operating system (Tux)?',
+          question_image: '',
+          option_a: 'https://upload.wikimedia.org/wikipedia/commons/f/fa/Apple_logo_black.svg',
+          option_b: 'https://upload.wikimedia.org/wikipedia/commons/3/35/Tux.svg',
+          option_c: 'https://upload.wikimedia.org/wikipedia/commons/8/87/Windows_logo_-_2021.svg',
+          option_d: 'https://upload.wikimedia.org/wikipedia/commons/d/d7/Android_robot.svg',
+          correct_answer: 'B',
+          points: 10,
+          time_limit_seconds: 20,
+          category: 'Operating Systems',
+        },
+        {
+          round_number: 3,
+          question: 'Which of the following is the official logo of the React library?',
+          question_image: '',
+          option_a: 'https://upload.wikimedia.org/wikipedia/commons/9/95/Vue.js_Logo_2.svg',
+          option_b: 'https://upload.wikimedia.org/wikipedia/commons/c/cf/Angular_full_color_logo.svg',
+          option_c: 'https://upload.wikimedia.org/wikipedia/commons/a/a7/React-icon.svg',
+          option_d: 'https://upload.wikimedia.org/wikipedia/commons/1/1b/Svelte_Logo.svg',
+          correct_answer: 'C',
+          points: 10,
+          time_limit_seconds: 20,
+          category: 'Web Tech',
+        },
+        {
+          round_number: 4,
+          question: 'Identify the logo of the Git version control system:',
+          question_image: '',
+          option_a: 'https://upload.wikimedia.org/wikipedia/commons/e/e0/Git-logo.svg',
+          option_b: 'https://upload.wikimedia.org/wikipedia/commons/4/4e/Docker_%28container_engine%29_logo.svg',
+          option_c: 'https://upload.wikimedia.org/wikipedia/commons/3/39/Kubernetes_logo_without_workmark.svg',
+          option_d: 'https://upload.wikimedia.org/wikipedia/commons/e/e9/Jenkins_logo.svg',
+          correct_answer: 'A',
+          points: 10,
+          time_limit_seconds: 20,
+          category: 'DevOps & Tools',
+        },
+        {
+          round_number: 5,
+          question: 'Look at the logo below. Which containerization platform does it represent?',
+          question_image: 'https://upload.wikimedia.org/wikipedia/commons/4/4e/Docker_%28container_engine%29_logo.svg',
+          option_a: 'Docker',
+          option_b: 'Podman',
+          option_c: 'VirtualBox',
+          option_d: 'VMware',
+          correct_answer: 'A',
+          points: 15,
+          time_limit_seconds: 20,
+          category: 'Cloud & DevOps',
+        },
+        {
+          round_number: 6,
+          question: 'Which of the following is the logo of PostgreSQL (Elephant)?',
+          question_image: '',
+          option_a: 'https://upload.wikimedia.org/wikipedia/en/d/dd/MySQL_logo.svg',
+          option_b: 'https://upload.wikimedia.org/wikipedia/commons/9/93/MongoDB_Logo.svg',
+          option_c: 'https://upload.wikimedia.org/wikipedia/en/6/6b/Redis_Logo.svg',
+          option_d: 'https://upload.wikimedia.org/wikipedia/commons/2/29/Postgresql_elephant.svg',
+          correct_answer: 'D',
+          points: 10,
+          time_limit_seconds: 20,
+          category: 'Databases',
+        },
+        {
+          round_number: 7,
+          question: 'Identify the modern programming language represented by this mascot (Ferris):',
+          question_image: 'https://upload.wikimedia.org/wikipedia/commons/0/0f/Original_Ferris.svg',
+          option_a: 'Rust',
+          option_b: 'Golang',
+          option_c: 'C++',
+          option_d: 'Zig',
+          correct_answer: 'A',
+          points: 15,
+          time_limit_seconds: 20,
+          category: 'Programming Languages',
+        },
+        {
+          round_number: 8,
+          question: 'Which of the following is the official logo of GitHub (Octocat)?',
+          question_image: '',
+          option_a: 'https://upload.wikimedia.org/wikipedia/commons/e/e1/GitLab_logo.svg',
+          option_b: 'https://upload.wikimedia.org/wikipedia/commons/9/91/Octicons-mark-github.svg',
+          option_c: 'https://upload.wikimedia.org/wikipedia/commons/0/0e/Bitbucket-blue-logomark-only.svg',
+          option_d: 'https://upload.wikimedia.org/wikipedia/commons/0/02/Stack_Overflow_logo.svg',
+          correct_answer: 'B',
+          points: 10,
+          time_limit_seconds: 20,
+          category: 'Developer Platforms',
+        },
+        {
+          round_number: 9,
+          question: 'Which popular JavaScript runtime uses this hexagonal green logo?',
+          question_image: 'https://upload.wikimedia.org/wikipedia/commons/d/d9/Node.js_logo.svg',
+          option_a: 'Deno',
+          option_b: 'Node.js',
+          option_c: 'Bun',
+          option_d: 'Electron',
+          correct_answer: 'B',
+          points: 10,
+          time_limit_seconds: 20,
+          category: 'Web Tech',
+        },
+        {
+          round_number: 10,
+          question: 'Which of the following is the official cryptocurrency logo of Ethereum?',
+          question_image: '',
+          option_a: 'https://upload.wikimedia.org/wikipedia/commons/4/46/Bitcoin.svg',
+          option_b: 'https://upload.wikimedia.org/wikipedia/commons/0/05/Ethereum_logo_2014.svg',
+          option_c: 'https://upload.wikimedia.org/wikipedia/commons/e/e9/Solana_logo.svg',
+          option_d: 'https://upload.wikimedia.org/wikipedia/en/d/d0/Dogecoin_Logo.png',
+          correct_answer: 'B',
+          points: 15,
+          time_limit_seconds: 20,
+          category: 'Blockchain & Web3',
+        },
+      ];
+
+      const ws = XLSX.utils.json_to_sheet(sampleData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Questions');
+      XLSX.writeFile(wb, 'sample-questions.xlsx');
+      showToast('Excel Template downloaded (.xlsx)!', 'success');
+    } catch (err) {
+      console.error('Download error:', err);
+      // Fallback: direct download link
+      const link = document.createElement('a');
+      link.href = '/sample-questions.xlsx';
+      link.setAttribute('download', 'sample-questions.xlsx');
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => link.parentNode?.removeChild(link), 100);
+      showToast('Downloaded sample-questions.xlsx', 'success');
+    } finally {
+      setDownloadingTemplate(false);
     }
   };
 
@@ -674,10 +879,22 @@ export default function AdminDashboard() {
                 {currentQuestion.questionText}
               </h2>
 
-              {/* 4 Big Options Grid */}
+              {/* Optional Question Image for Projector */}
+              {currentQuestion.questionImage && (
+                <div className="projector-question-image-box">
+                  <img
+                    src={currentQuestion.questionImage}
+                    alt="Question Diagram"
+                    className="projector-question-img"
+                  />
+                </div>
+              )}
+
+              {/* 4 Big Options Grid (Supports Images & Text) */}
               {Array.isArray(currentQuestion.options) && currentQuestion.options.length > 0 && (
                 <div className="projector-options-grid">
                   {currentQuestion.options.map((opt, i) => {
+                    const { text, image, hasImage } = parseOptionContent(opt);
                     // CRITICAL: NEVER highlight while round is active! Only after roundActive === false AND showingAnswerReveal === true
                     const isHighlight = !roundActive && showingAnswerReveal && Boolean(revealedAnswer) && isCorrectOption(opt, i, revealedAnswer);
                     const isDimmed = !roundActive && showingAnswerReveal && Boolean(revealedAnswer) && !isHighlight;
@@ -685,10 +902,15 @@ export default function AdminDashboard() {
                     return (
                       <div
                         key={i}
-                        className={`projector-option-box${isHighlight ? ' correct-answer-highlight' : ''}${isDimmed ? ' dimmed-option' : ''}`}
+                        className={`projector-option-box${hasImage ? ' has-image' : ''}${isHighlight ? ' correct-answer-highlight' : ''}${isDimmed ? ' dimmed-option' : ''}`}
                       >
                         <span className="projector-option-letter">{letters[i]}</span>
-                        <span style={{ flex: 1 }}>{opt}</span>
+                        {hasImage && (
+                          <div className="projector-option-image-wrap">
+                            <img src={image} alt={`Option ${letters[i]}`} />
+                          </div>
+                        )}
+                        {text && <span style={{ flex: 1, marginTop: hasImage ? 6 : 0, fontWeight: 700 }}>{text}</span>}
                         {isHighlight && (
                           <span className="correct-indicator">
                             <Icons.CheckCircle size={22} color="#ffffff" />
@@ -1021,6 +1243,17 @@ export default function AdminDashboard() {
                 </>
               )}
 
+              {isCompleted && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ padding: 10, background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.4)', borderRadius: 'var(--radius-md)', color: '#10b981', fontSize: 13, fontWeight: 700, textAlign: 'center' }}>
+                    🏆 Quiz Concluded!
+                  </div>
+                  <button className="btn btn-primary btn-full btn-sm" onClick={restartQuiz}>
+                    <Icons.Play size={16} /> Replay / Restart Quiz
+                  </button>
+                </div>
+              )}
+
               <hr style={{ border: 'none', borderTop: '1px solid var(--clr-border)', margin: '8px 0' }} />
 
               <button className="btn btn-primary btn-full btn-sm" onClick={toggleProjectorMode}>
@@ -1031,8 +1264,12 @@ export default function AdminDashboard() {
                 <Icons.QrCode size={15} /> Display Big QR Code
               </button>
 
+              <button className="btn btn-warning btn-full btn-sm" onClick={restartQuiz}>
+                <Icons.Refresh size={14} /> Restart Quiz (Keep Questions)
+              </button>
+
               <button className="btn btn-outline-danger btn-full btn-sm" onClick={resetEvent}>
-                <Icons.Refresh size={14} /> Reset Event
+                <Icons.Trash size={14} /> Full Reset (Delete All Data)
               </button>
             </div>
 
@@ -1081,14 +1318,26 @@ export default function AdminDashboard() {
                     )}
                   </div>
 
-                  <h3 style={{ fontSize: 22, color: 'var(--clr-text-h)', marginBottom: 18, fontWeight: 800, lineHeight: 1.35 }}>
+                  <h3 style={{ fontSize: 22, color: 'var(--clr-text-h)', marginBottom: 14, fontWeight: 800, lineHeight: 1.35 }}>
                     {currentQuestion.questionText}
                   </h3>
+
+                  {/* Question Image Preview in Admin Card */}
+                  {currentQuestion.questionImage && (
+                    <div style={{ marginBottom: 14, textAlign: 'center' }}>
+                      <img
+                        src={currentQuestion.questionImage}
+                        alt="Question Diagram"
+                        style={{ maxHeight: 160, maxWidth: '100%', borderRadius: 'var(--radius-md)', border: '1px solid var(--clr-border)' }}
+                      />
+                    </div>
+                  )}
 
                   {/* 4 Options preview */}
                   {Array.isArray(currentQuestion.options) && currentQuestion.options.length > 0 && (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 18 }}>
                       {currentQuestion.options.map((opt, i) => {
+                        const { text, image, hasImage } = parseOptionContent(opt);
                         // CRITICAL: NEVER highlight while round is active!
                         const isHighlight = !roundActive && showingAnswerReveal && Boolean(revealedAnswer) && isCorrectOption(opt, i, revealedAnswer);
 
@@ -1096,9 +1345,17 @@ export default function AdminDashboard() {
                           <div
                             key={i}
                             className={`admin-option-box${isHighlight ? ' correct-answer-highlight' : ''}`}
+                            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 10 }}
                           >
                             <strong className="admin-option-letter">{['A', 'B', 'C', 'D'][i]}:</strong>
-                            <span style={{ flex: 1 }}>{opt}</span>
+                            {hasImage && (
+                              <img
+                                src={image}
+                                alt={`Option ${['A', 'B', 'C', 'D'][i]}`}
+                                style={{ width: 44, height: 44, objectFit: 'contain', borderRadius: 6, background: 'rgba(0,0,0,0.04)' }}
+                              />
+                            )}
+                            <span style={{ flex: 1, wordBreak: 'break-word' }}>{text || (hasImage ? 'Image Option' : opt)}</span>
                             {isHighlight && (
                               <span className="badge badge-success" style={{ fontSize: 12, padding: '3px 8px', fontWeight: 800 }}>
                                 ✓ Correct
@@ -1171,18 +1428,21 @@ export default function AdminDashboard() {
               <div>
                 <h2 style={{ fontSize: 18, marginBottom: 4 }}>Questions Repository</h2>
                 <p style={{ fontSize: 13, color: 'var(--clr-text)' }}>
-                  Questions with 4 options are displayed automatically. All round timers are set to 20 seconds. Correct answers are kept private on the server.
+                  Questions with 4 options are displayed automatically. Supports images in questions and options (provide image URLs in Excel). Correct answers are kept private on the server.
                 </p>
               </div>
 
               <div style={{ display: 'flex', gap: 10 }}>
-                <a
-                  href={`${API_BASE}/api/questions/template`}
-                  download
+                <button
+                  type="button"
+                  onClick={handleDownloadTemplate}
+                  disabled={downloadingTemplate}
                   className="btn btn-secondary btn-sm"
+                  title="Download pre-formatted Excel spreadsheet template with image examples"
                 >
-                  <Icons.Download size={15} /> Download 20s 4-Option Template
-                </a>
+                  {downloadingTemplate ? <Spinner size="sm" /> : <Icons.Download size={15} />}
+                  <span>{downloadingTemplate ? 'Downloading…' : 'Download Excel Template (.xlsx)'}</span>
+                </button>
 
                 <input
                   type="file"
@@ -1249,16 +1509,36 @@ export default function AdminDashboard() {
                           <span className="badge badge-primary">Round {q.roundNumber}</span>
                         </td>
                         <td>
-                          <strong style={{ color: 'var(--clr-text-h)' }}>{q.questionText}</strong>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            {q.questionImage && (
+                              <img
+                                src={q.questionImage}
+                                alt="Question diagram"
+                                style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--clr-border)', flexShrink: 0 }}
+                              />
+                            )}
+                            <strong style={{ color: 'var(--clr-text-h)' }}>{q.questionText}</strong>
+                          </div>
                         </td>
                         <td>
                           {Array.isArray(q.options) && q.options.length > 0 ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12 }}>
-                              {q.options.map((opt, i) => (
-                                <span key={i}>
-                                  <strong style={{ color: 'var(--clr-primary)' }}>{['A', 'B', 'C', 'D'][i]}:</strong> {opt}
-                                </span>
-                              ))}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 }}>
+                              {q.options.map((opt, i) => {
+                                const { text, image, hasImage } = parseOptionContent(opt);
+                                return (
+                                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <strong style={{ color: 'var(--clr-primary)' }}>{['A', 'B', 'C', 'D'][i]}:</strong>
+                                    {hasImage && (
+                                      <img
+                                        src={image}
+                                        alt="Option"
+                                        style={{ width: 22, height: 22, objectFit: 'contain', borderRadius: 4 }}
+                                      />
+                                    )}
+                                    <span>{text || (hasImage ? 'Image' : opt)}</span>
+                                  </div>
+                                );
+                              })}
                             </div>
                           ) : (
                             <span style={{ color: 'var(--clr-text-muted)', fontSize: 12 }}>Open Text Answer</span>

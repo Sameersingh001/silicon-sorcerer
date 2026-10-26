@@ -16,6 +16,12 @@ const questionSchema = new mongoose.Schema({
     required: true,
     trim: true,
   },
+  // Optional URL for a diagram, photo, code snippet, or illustration
+  questionImage: {
+    type: String,
+    trim: true,
+    default: '',
+  },
   correctAnswer: {
     type: String,
     required: true,
