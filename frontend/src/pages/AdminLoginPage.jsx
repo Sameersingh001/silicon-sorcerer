@@ -4,6 +4,7 @@ import { apiFetch, setAdminToken } from '../utils';
 import { useToast } from '../hooks';
 import { Toast, Spinner } from '../components';
 import { Icons } from '../Icons';
+import brandLogo from '../assets/logo-transparent.png';
 
 export default function AdminLoginPage() {
   const navigate = useNavigate();
@@ -45,22 +46,29 @@ export default function AdminLoginPage() {
 
       <div className="container fade-in">
         {/* Brand Header */}
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+        <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <div style={{
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            width: 60, height: 60, borderRadius: 16,
-            background: 'var(--grad-primary)',
-            color: '#ffffff',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: '#000000',
+            padding: '10px 18px',
+            borderRadius: 16,
             marginBottom: 16,
-            boxShadow: '0 8px 24px rgba(79, 70, 229, 0.25)',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25)',
+            border: '1px solid rgba(255, 255, 255, 0.15)',
           }}>
-            <Icons.Lock size={28} />
+            <img
+              src={brandLogo}
+              alt="Silicon Sorcerers"
+              style={{ height: 60, width: 'auto', objectFit: 'contain' }}
+            />
           </div>
           <h1 style={{ fontSize: 26, fontWeight: 800, marginBottom: 6, color: 'var(--clr-text-h)' }}>
             Admin Portal
           </h1>
           <p style={{ fontSize: 14, color: 'var(--clr-text)' }}>
-            Sign in to manage quiz rounds, questions, and students
+            Silicon Sorcerers — Competition Control Room
           </p>
         </div>
 

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { apiFetch, setParticipantSession, getParticipantSession } from '../utils';
 import { useToast } from '../hooks';
 import { Toast, Spinner, IPhoneFullscreenHelper, IPhoneBannerPrompt } from '../components';
 import { Icons } from '../Icons';
+import brandLogo from '../assets/logo-transparent.png';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
@@ -102,27 +103,32 @@ export default function RegisterPage() {
 
       <div className="container fade-in" style={{ maxWidth: 440, width: '100%' }}>
         {/* Brand Header */}
-        <div style={{ textAlign: 'center', marginBottom: 24 }}>
+        <div style={{ textAlign: 'center', marginBottom: 20 }}>
           <div style={{
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            width: 60, height: 60, borderRadius: 18,
-            background: 'var(--grad-primary)',
-            color: '#ffffff',
-            marginBottom: 14,
-            boxShadow: '0 8px 24px rgba(79, 70, 229, 0.35)',
-            position: 'relative',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: '#000000',
+            padding: '10px 18px',
+            borderRadius: 16,
+            marginBottom: 12,
+            boxShadow: '0 6px 20px rgba(0, 0, 0, 0.25)',
+            border: '1px solid rgba(255, 255, 255, 0.15)',
           }}>
-            <Icons.QrCode size={30} />
-            <div style={{
-              position: 'absolute', inset: -4, borderRadius: 22,
-              border: '2px solid rgba(99, 102, 241, 0.3)',
-              animation: 'pulseLight 3s infinite',
-            }} />
+            <img
+              src={brandLogo}
+              alt="Silicon Sorcerers Logo"
+              style={{
+                height: 56,
+                width: 'auto',
+                objectFit: 'contain',
+              }}
+            />
           </div>
           <h1 style={{ fontSize: 'clamp(22px, 5vw, 28px)', fontWeight: 800, marginBottom: 4, color: 'var(--clr-text-h)' }}>
-            Silicon Sorcerer
+            Silicon Sorcerers
           </h1>
-          <p style={{ fontSize: 13.5, color: 'var(--clr-text)' }}>
+          <p style={{ fontSize: 13.5, color: 'var(--clr-text)', marginBottom: 12 }}>
             College QR Quest & Live Competition Arena
           </p>
         </div>
@@ -172,14 +178,6 @@ export default function RegisterPage() {
           ) : (
             /* Registration Form */
             <form onSubmit={handleSubmit}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-                <span className="badge badge-primary" style={{ fontSize: 12.5 }}>
-                  <Icons.Users size={13} /> Participant Registration
-                </span>
-                <span className="badge badge-success" style={{ fontSize: 11.5 }}>
-                  <span className="status-dot live" /> Ready to Join
-                </span>
-              </div>
 
               <div className="form-group" style={{ marginBottom: 16 }}>
                 <label className="form-label" htmlFor="fullName">Full Name</label>
@@ -226,7 +224,7 @@ export default function RegisterPage() {
                   <Icons.ShieldAlert size={16} />
                 </div>
                 <p style={{ fontSize: 12, color: 'var(--clr-text-2)', lineHeight: 1.5 }}>
-                  <strong>Anti-Cheat Active:</strong> Your device will lock during questions. Switching tabs or exiting will alert the quiz host immediately.
+                  <strong>Anti-Cheat Active:</strong> Your screen will lock during questions. Switching tabs or exiting will log strike <strong>3 strikes lead to automatic disqualification</strong>.
                 </p>
               </div>
 

@@ -11,6 +11,7 @@ import {
   BigQRModal, CheatingAlertBanner,
 } from '../components';
 import { Icons } from '../Icons';
+import brandLogo from '../assets/logo-transparent.png';
 
 // ── Helper to extract participant initials ──────────────────────────
 const getInitials = (name) => {

@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import HomePage from './pages/HomePage';
 import RegisterPage from './pages/RegisterPage';
 import GamePage from './pages/GamePage';
 import AdminLoginPage from './pages/AdminLoginPage';
@@ -9,6 +10,10 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Landing & Information */}
+        <Route path="/" element={<HomePage />} />
+        <Route path="/home" element={<HomePage />} />
+
         {/* Participant routes */}
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/game" element={<GamePage />} />
@@ -17,9 +22,8 @@ function App() {
         <Route path="/admin/login" element={<AdminLoginPage />} />
         <Route path="/admin" element={<AdminDashboard />} />
 
-        {/* Default: redirect to register */}
-        <Route path="/" element={<Navigate to="/register" replace />} />
-        <Route path="*" element={<Navigate to="/register" replace />} />
+        {/* Default: redirect to home */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );
