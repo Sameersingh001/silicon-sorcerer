@@ -87,11 +87,26 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
-// GET /api/questions/template - Download sample template with 4 options
+// GET /api/questions/template - Download sample template with difficulty levels
 router.get('/template', (req, res) => {
   const sampleData = [
     {
       round_number: 1,
+      difficulty: 'introduction',
+      question: 'What does CPU stand for?',
+      question_image: '',
+      option_a: 'Central Processing Unit',
+      option_b: 'Computer Personal Unit',
+      option_c: 'Central Power Unit',
+      option_d: 'Core Processing Unit',
+      correct_answer: 'A',
+      points: 0,
+      time_limit_seconds: 30,
+      category: 'Introduction',
+    },
+    {
+      round_number: 2,
+      difficulty: 'beginner',
       question: 'Which protocol is used to secure browsing on the World Wide Web?',
       question_image: '',
       option_a: 'HTTP',
@@ -104,7 +119,8 @@ router.get('/template', (req, res) => {
       category: 'Cyber Security',
     },
     {
-      round_number: 2,
+      round_number: 3,
+      difficulty: 'beginner',
       question: 'Identify the logo of the popular programming language shown below:',
       question_image: 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600&auto=format&fit=crop&q=80',
       option_a: 'Python',
@@ -117,7 +133,8 @@ router.get('/template', (req, res) => {
       category: 'Programming',
     },
     {
-      round_number: 3,
+      round_number: 4,
+      difficulty: 'intermediate',
       question: 'Which of the following is the official mascot or logo of Linux?',
       question_image: '',
       option_a: 'https://upload.wikimedia.org/wikipedia/commons/3/35/Tux.svg',
@@ -130,7 +147,8 @@ router.get('/template', (req, res) => {
       category: 'Operating Systems',
     },
     {
-      round_number: 4,
+      round_number: 5,
+      difficulty: 'advanced',
       question: 'What is the binary representation of the decimal number 10?',
       question_image: '',
       option_a: '1001',
@@ -138,7 +156,7 @@ router.get('/template', (req, res) => {
       option_c: '1100',
       option_d: '1110',
       correct_answer: '1010',
-      points: 15,
+      points: 20,
       time_limit_seconds: 20,
       category: 'Computer Science',
     },

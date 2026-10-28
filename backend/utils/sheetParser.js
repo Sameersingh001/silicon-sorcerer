@@ -60,7 +60,14 @@ const parseQuestionSheet = (buffer, mimetype) => {
     const questionText = String(row.question || '').trim();
     const correctAnswer = String(row.correct_answer || '').trim();
     const acceptedRaw = String(row.accepted_answers || '').trim();
-    const points = parseInt(row.points) || 10;
+    // Difficulty: introduction | beginner | intermediate | advanced
+    const VALID_DIFFICULTIES = ['introduction', 'beginner', 'intermediate', 'advanced'];
+    const rawDifficulty = String(row.difficulty || row.level || 'beginner').trim().toLowerCase();
+    const difficulty = VALID_DIFFICULTIES.includes(rawDifficulty) ? rawDifficulty : 'beginner';
+
+    // Introduction level always gets 0 points (no scoring)
+    const rawPoints = parseInt(row.points);
+    const points = difficulty === 'introduction' ? 0 : (isNaN(rawPoints) ? 10 : rawPoints);
     const timeLimitSeconds = parseInt(row.time_limit_seconds) || 20;
     const category = String(row.category || 'General').trim();
 
@@ -170,6 +177,7 @@ const parseQuestionSheet = (buffer, mimetype) => {
       questionType,
       correctAnswer,
       acceptedAnswers,
+      difficulty,
       points,
       timeLimitSeconds,
       category,

@@ -46,7 +46,7 @@ const scheduleRoundTimeout = (io, event, remainingMs) => {
   roundTimeoutHandle = setTimeout(async () => {
     try {
       const freshEvent = await Event.findById(event._id);
-      if (!freshEvent || freshEvent.roundTimer.roundStatus !== 'active') return;
+      if (!freshEvent || freshEvent.roundTimer?.roundStatus !== 'active') return;
 
       freshEvent.roundTimer.roundStatus = 'closed';
       await freshEvent.save();
@@ -59,12 +59,9 @@ const scheduleRoundTimeout = (io, event, remainingMs) => {
         message: 'Time is up! Round closed.',
       });
 
-      // Reveal correct answer ONLY to admin screen when round times out
+      // NOTE: Answer is NOT auto-revealed. Admin must press "Reveal Answer" button.
+      // Leaderboard is broadcast after round closes.
       if (question) {
-        io.to('admins').emit('question:answer_reveal', {
-          roundNumber: freshEvent.currentRoundNumber,
-          correctAnswer: question.correctAnswer,
-        });
         await broadcastRoundLeaderboard(io, freshEvent, question);
       }
 
@@ -135,11 +132,11 @@ const initSocketHandlers = (io) => {
         });
 
         // If active round, send current question (without answer)
-        if (event.status === 'live' && event.roundTimer.roundStatus === 'active' && event.currentQuestionId) {
+        if (event.status === 'live' && event.roundTimer?.roundStatus === 'active' && event.currentQuestionId) {
           const question = await Question.findById(event.currentQuestionId).select('-correctAnswer -acceptedAnswers');
           if (question) {
             const now = Date.now();
-            const remaining = event.roundTimer.deadlineAt
+            const remaining = event.roundTimer?.deadlineAt
               ? Math.max(0, new Date(event.roundTimer.deadlineAt).getTime() - now)
               : 0;
 
@@ -340,6 +337,7 @@ const initSocketHandlers = (io) => {
           options: question.options || [],
           questionType: question.questionType || 'mcq',
           category: question.category,
+          difficulty: question.difficulty || 'beginner',
           timeLimitSeconds: question.timeLimitSeconds,
           deadlineAt,
           serverTime: now.getTime(),
@@ -353,6 +351,7 @@ const initSocketHandlers = (io) => {
         io.to('admins').emit('question:admin', {
           ...payload,
           points: question.points,
+          difficulty: question.difficulty || 'beginner',
         });
 
         await broadcastGameState(io, event);
@@ -368,7 +367,7 @@ const initSocketHandlers = (io) => {
       try {
         const event = await getOrCreateEvent();
         if (event.status !== 'live') return socket.emit('error', { message: 'Game is not live' });
-        if (event.roundTimer.roundStatus !== 'active') return socket.emit('error', { message: 'No active round to pause' });
+        if (event.roundTimer?.roundStatus !== 'active') return socket.emit('error', { message: 'No active round to pause' });
 
         clearRoundTimeout();
 
@@ -442,18 +441,37 @@ const initSocketHandlers = (io) => {
           message: 'Round closed by host.',
         });
 
+        // NOTE: Answer is NOT auto-revealed here. Admin must press "Reveal Answer" button.
         if (question) {
-          // Reveal correct answer ONLY to admins when round is closed
-          io.to('admins').emit('question:answer_reveal', {
-            roundNumber: event.currentRoundNumber,
-            correctAnswer: question.correctAnswer,
-          });
           await broadcastRoundLeaderboard(io, event, question);
         }
 
         await broadcastGameState(io, event);
       } catch (err) {
         socket.emit('error', { message: 'Failed to close round' });
+      }
+    });
+
+    // ─── Admin: Reveal Answer (Manual Button) ───────────────────────────────
+    socket.on('admin:reveal_answer', async () => {
+      if (!socket.isAdmin) return socket.emit('error', { message: 'Unauthorized' });
+      try {
+        const event = await getOrCreateEvent();
+        const question = await Question.findById(event.currentQuestionId);
+
+        if (!question) {
+          return socket.emit('error', { message: 'No active question found to reveal answer for' });
+        }
+
+        // Broadcast answer reveal to BOTH admins (projector) AND all connected participants!
+        io.emit('question:answer_reveal', {
+          roundNumber: event.currentRoundNumber,
+          correctAnswer: question.correctAnswer,
+          difficulty: question.difficulty || 'beginner',
+        });
+      } catch (err) {
+        console.error('reveal_answer error:', err);
+        socket.emit('error', { message: 'Failed to reveal answer' });
       }
     });
 

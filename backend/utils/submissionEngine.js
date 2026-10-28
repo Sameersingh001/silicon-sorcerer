@@ -34,7 +34,9 @@ const setActiveRound = (event, question) => {
     questionText: question.questionText,
     correctAnswer: question.correctAnswer,
     acceptedAnswers: question.acceptedAnswers || [],
-    points: question.points || 10,
+    difficulty: question.difficulty || 'beginner',
+    // Introduction level always 0 points (extra safety check in engine)
+    points: question.difficulty === 'introduction' ? 0 : (question.points || 10),
     startedAt: event.roundTimer?.startedAt || new Date(),
     deadlineAt: event.roundTimer?.deadlineAt,
     roundStatus: 'active',

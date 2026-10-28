@@ -169,12 +169,18 @@ export default function GamePage() {
       showToast('Time is up! Round closed.', 'warning');
     });
 
+    socket.on('question:answer_reveal', ({ roundNumber, correctAnswer, difficulty }) => {
+      setLastResult((prev) => prev ? { ...prev, revealed: true, correctAnswer } : { revealed: true, correctAnswer, isCorrect: false });
+      showToast('Host revealed the correct answer!', 'info');
+    });
+
     socket.on('leaderboard:round', ({ roundNumber, leaderboard }) => {
       setRoundLeaderboard(leaderboard);
       const myResult = leaderboard.find((item) => item.participantId === session.participantId);
       if (myResult) {
         setLastResult((prev) => ({
           ...prev,
+          revealed: true,
           isCorrect: myResult.isCorrect,
           pointsAwarded: myResult.pointsAwarded,
           responseTimeMs: myResult.responseTimeMs,
@@ -234,12 +240,10 @@ export default function GamePage() {
           responseTimeMs: data.responseTimeMs || 0,
           submittedAnswer: String(finalAnswer).trim(),
           message: data.message,
+          revealed: false,
         });
         setPhase(PHASE.SUBMITTED);
-        showToast(
-          data.isCorrect ? `Correct! +${data.pointsAwarded} pts!` : 'Answer locked & recorded!',
-          data.isCorrect ? 'success' : 'info'
-        );
+        showToast('Answer locked & submitted!', 'success');
       } else {
         showToast(data?.message || 'Submission rejected', 'error');
       }
@@ -357,6 +361,14 @@ export default function GamePage() {
     const hasImageOptions = hasOptions && question.options.some((opt) => parseOptionContent(opt).hasImage);
     const isCompactScreen = typeof window !== 'undefined' && (window.innerWidth < 640 || window.innerHeight < 740);
 
+    const cleanQuestionText = (text) => {
+      if (!text) return '';
+      return String(text)
+        .replace(/^Welcome!?\s*This is an Introduction round with NO scoring\.?\s*/i, '')
+        .replace(/^Welcome to [^!.]+!\s*This is an introduction round with no points\.?\s*/i, '')
+        .trim();
+    };
+
     return (
       <div className="fullscreen-arena" ref={arenaRef}>
         <Toast toast={toast} />
@@ -374,6 +386,20 @@ export default function GamePage() {
                 {question.category}
               </span>
             )}
+            {question.difficulty && (() => {
+              const map = {
+                introduction: { bg: 'rgba(107,114,128,0.3)', border: 'rgba(107,114,128,0.4)', text: '#d1d5db', label: '📖 Intro' },
+                beginner:     { bg: 'rgba(16,185,129,0.2)',  border: 'rgba(16,185,129,0.4)',  text: '#6ee7b7', label: '🟢 Beginner' },
+                intermediate: { bg: 'rgba(79,70,229,0.25)',  border: 'rgba(99,102,241,0.4)',  text: '#a5b4fc', label: '🔵 Intermediate' },
+                advanced:     { bg: 'rgba(245,158,11,0.25)', border: 'rgba(245,158,11,0.4)',  text: '#fcd34d', label: '🔥 Advanced' },
+              };
+              const d = map[question.difficulty] || map['beginner'];
+              return (
+                <span style={{ fontSize: 11.5, padding: '5px 10px', borderRadius: 999, fontWeight: 700, background: d.bg, border: `1px solid ${d.border}`, color: d.text }}>
+                  {d.label}
+                </span>
+              );
+            })()}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -433,8 +459,28 @@ export default function GamePage() {
 
             {/* Question Text */}
             <div style={{ textAlign: 'center' }}>
+              {(question.difficulty === 'introduction' || /welcome/i.test(question.questionText)) && (
+                <div style={{
+                  background: '#000000',
+                  border: '1.5px solid rgba(255, 255, 255, 0.22)',
+                  borderRadius: 14,
+                  padding: '12px 14px',
+                  marginBottom: 16,
+                  textAlign: 'center',
+                  boxShadow: '0 8px 30px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.12)',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 4 }}>
+                    <span style={{ fontSize: 13.5, fontWeight: 900, color: '#ffffff', letterSpacing: '0.01em' }}>
+                      Welcome! This is an Introduction round with NO scoring.
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: '#94a3b8', lineHeight: 1.45 }}>
+                    Practice / Warmup round for all participants • 0 pts • Does not affect leaderboard rankings
+                  </div>
+                </div>
+              )}
               <h2 className="question-heading">
-                {question.questionText}
+                {cleanQuestionText(question.questionText)}
               </h2>
             </div>
 
@@ -587,29 +633,61 @@ export default function GamePage() {
           {/* Animated Status Icon */}
           <div style={{
             display: 'inline-flex', padding: 18,
-            background: isCorrect ? 'rgba(16, 185, 129, 0.18)' : 'rgba(99, 102, 241, 0.18)',
-            color: isCorrect ? '#10b981' : '#818cf8',
+            background: lastResult?.revealed
+              ? (isCorrect ? 'rgba(16, 185, 129, 0.18)' : 'rgba(239, 68, 68, 0.18)')
+              : 'rgba(99, 102, 241, 0.18)',
+            color: lastResult?.revealed
+              ? (isCorrect ? '#10b981' : '#f87171')
+              : '#818cf8',
             borderRadius: '50%', marginBottom: 16,
-            border: `2px solid ${isCorrect ? 'rgba(16, 185, 129, 0.35)' : 'rgba(99, 102, 241, 0.35)'}`,
-            boxShadow: `0 0 28px ${isCorrect ? 'rgba(16, 185, 129, 0.35)' : 'rgba(99, 102, 241, 0.35)'}`,
+            border: `2px solid ${
+              lastResult?.revealed
+                ? (isCorrect ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)')
+                : 'rgba(99, 102, 241, 0.35)'
+            }`,
+            boxShadow: `0 0 28px ${
+              lastResult?.revealed
+                ? (isCorrect ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)')
+                : 'rgba(99, 102, 241, 0.35)'
+            }`,
           }}>
-            {isCorrect ? <Icons.CheckCircle size={44} /> : <Icons.CheckCircle size={44} />}
+            {lastResult?.revealed ? (
+              isCorrect ? <Icons.CheckCircle size={44} /> : <Icons.XCircle size={44} />
+            ) : (
+              <Icons.Lock size={44} />
+            )}
           </div>
 
-          <h2 style={{ fontSize: 'clamp(20px, 4.5vw, 24px)', fontWeight: 800, marginBottom: 6, color: isCorrect ? '#34d399' : '#ffffff' }}>
-            {hasResult
-              ? isCorrect
-                ? '🎉 Correct Answer!'
-                : 'Answer Locked & Recorded!'
+          <h2 style={{
+            fontSize: 'clamp(20px, 4.5vw, 24px)', fontWeight: 800, marginBottom: 6,
+            color: lastResult?.revealed
+              ? (isCorrect ? '#34d399' : '#f87171')
+              : '#ffffff',
+          }}>
+            {lastResult?.revealed
+              ? (isCorrect ? '🎉 Correct Answer!' : 'Recorded! Round Over')
               : 'Answer Locked & Submitted!'}
           </h2>
 
-          <p style={{ fontSize: 14, color: isCorrect ? '#a7f3d0' : '#94a3b8', marginBottom: 18, lineHeight: 1.5, fontWeight: isCorrect ? 600 : 400 }}>
-            {hasResult
-              ? isCorrect
-                ? `+${lastResult.pointsAwarded} points awarded in ${fmtMs(lastResult.responseTimeMs)}!`
-                : `Recorded in ${fmtMs(lastResult.responseTimeMs)}. Waiting for round to close...`
-              : 'Your response has been timestamped and sent to the host.'}
+          <p style={{
+            fontSize: 14,
+            color: lastResult?.revealed
+              ? (isCorrect ? '#a7f3d0' : '#fca5a5')
+              : '#94a3b8',
+            marginBottom: 18, lineHeight: 1.5,
+            fontWeight: lastResult?.revealed ? 600 : 400,
+          }}>
+            {lastResult?.revealed ? (
+              isCorrect
+                ? (question?.difficulty === 'introduction'
+                    ? 'Practice Round (0 pts) · Well done!'
+                    : `+${lastResult.pointsAwarded} points awarded in ${fmtMs(lastResult.responseTimeMs)}!`)
+                : (lastResult?.correctAnswer
+                    ? `Official answer: ${lastResult.correctAnswer}`
+                    : 'No points awarded for this round.')
+            ) : (
+              `Recorded in ${fmtMs(lastResult?.responseTimeMs || 0)}. Waiting for the host to reveal results...`
+            )}
           </p>
 
           {/* Submitted Answer Recap Chip */}
@@ -666,21 +744,53 @@ export default function GamePage() {
           <div style={{ textAlign: 'center', marginBottom: 24 }}>
             <div style={{
               display: 'inline-flex', padding: 18,
-              background: lastResult?.isCorrect ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-              color: lastResult?.isCorrect ? '#10b981' : '#ef4444',
+              background: lastResult?.revealed
+                ? (lastResult?.isCorrect ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)')
+                : 'rgba(99, 102, 241, 0.15)',
+              color: lastResult?.revealed
+                ? (lastResult?.isCorrect ? '#10b981' : '#ef4444')
+                : '#818cf8',
               borderRadius: '50%', marginBottom: 14,
-              border: `2px solid ${lastResult?.isCorrect ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)'}`,
-              boxShadow: `0 0 25px ${lastResult?.isCorrect ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+              border: `2px solid ${
+                lastResult?.revealed
+                  ? (lastResult?.isCorrect ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)')
+                  : 'rgba(99, 102, 241, 0.35)'
+              }`,
+              boxShadow: `0 0 25px ${
+                lastResult?.revealed
+                  ? (lastResult?.isCorrect ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)')
+                  : 'rgba(99, 102, 241, 0.3)'
+              }`,
             }}>
-              {lastResult?.isCorrect ? <Icons.CheckCircle size={40} /> : <Icons.XCircle size={40} />}
+              {lastResult?.revealed ? (
+                lastResult?.isCorrect ? <Icons.CheckCircle size={40} /> : <Icons.XCircle size={40} />
+              ) : (
+                <Icons.Clock size={40} />
+              )}
             </div>
-            <h2 style={{ fontSize: 24, fontWeight: 800, color: lastResult?.isCorrect ? '#34d399' : '#f87171', marginBottom: 6 }}>
-              {lastResult?.isCorrect ? 'Correct Answer!' : 'Incorrect or Missed'}
+            <h2 style={{
+              fontSize: 24, fontWeight: 800,
+              color: lastResult?.revealed
+                ? (lastResult?.isCorrect ? '#34d399' : '#f87171')
+                : '#ffffff',
+              marginBottom: 6,
+            }}>
+              {lastResult?.revealed
+                ? (lastResult?.isCorrect ? '🎉 Correct Answer!' : 'Incorrect or Missed')
+                : 'Round Closed'}
             </h2>
             <p style={{ fontSize: 13.5, color: '#94a3b8' }}>
-              {lastResult?.isCorrect
-                ? `+${lastResult.pointsAwarded} points awarded in ${fmtMs(lastResult.responseTimeMs)}!`
-                : 'No points awarded for this round.'}
+              {lastResult?.revealed ? (
+                lastResult?.isCorrect
+                  ? (question?.difficulty === 'introduction'
+                      ? 'Practice Round (0 pts) · Well done!'
+                      : `+${lastResult.pointsAwarded} points awarded in ${fmtMs(lastResult.responseTimeMs)}!`)
+                  : (lastResult?.correctAnswer
+                      ? `Official answer: ${lastResult.correctAnswer}`
+                      : 'No points awarded for this round.')
+              ) : (
+                'Host will reveal the correct answer on screen shortly...'
+              )}
             </p>
           </div>
 

@@ -383,20 +383,13 @@ export default function AdminDashboard() {
 
     const triggerAnswerReveal = (correctAnswer) => {
       if (!correctAnswer) return;
+      if (revealTimerRef.current) {
+        clearTimeout(revealTimerRef.current);
+        revealTimerRef.current = null;
+      }
       setRevealedAnswer(correctAnswer);
       setShowingAnswerReveal(true);
       setProjectorViewMode('question'); // Keep question view active on LED panel
-
-      if (revealTimerRef.current) {
-        clearTimeout(revealTimerRef.current);
-      }
-
-      // Display correct answer highlighted in green for 2 seconds, then transition to leaderboard!
-      revealTimerRef.current = setTimeout(() => {
-        setShowingAnswerReveal(false);
-        revealTimerRef.current = null;
-        setProjectorViewMode('leaderboard');
-      }, 2000);
     };
 
     socket.on('round:closed', ({ roundNumber }) => {
@@ -480,6 +473,7 @@ export default function AdminDashboard() {
   const closeRound = () => emit('admin:close_round');
   const endGame = () => { if (confirm('End the game for all participants?')) emit('admin:end_game'); };
   const getLeaderboard = () => emit('admin:get_leaderboard');
+  const revealAnswer = () => emit('admin:reveal_answer');
 
   const resetEvent = async () => {
     if (!confirm('This will delete all questions, submissions and participants. Continue?')) return;
@@ -607,6 +601,21 @@ export default function AdminDashboard() {
       const sampleData = [
         {
           round_number: 1,
+          difficulty: 'introduction',
+          question: 'What does CPU stand for?',
+          question_image: '',
+          option_a: 'Central Processing Unit',
+          option_b: 'Computer Personal Unit',
+          option_c: 'Central Power Unit',
+          option_d: 'Core Processing Unit',
+          correct_answer: 'A',
+          points: 0,
+          time_limit_seconds: 30,
+          category: 'Introduction',
+        },
+        {
+          round_number: 2,
+          difficulty: 'beginner',
           question: 'Which of the following is the official logo of the Python programming language?',
           question_image: '',
           option_a: 'https://upload.wikimedia.org/wikipedia/commons/c/c3/Python-logo-notext.svg',
@@ -619,7 +628,8 @@ export default function AdminDashboard() {
           category: 'Programming Languages',
         },
         {
-          round_number: 2,
+          round_number: 3,
+          difficulty: 'beginner',
           question: 'Which of these is the official mascot of the Linux operating system (Tux)?',
           question_image: '',
           option_a: 'https://upload.wikimedia.org/wikipedia/commons/f/fa/Apple_logo_black.svg',
@@ -632,7 +642,8 @@ export default function AdminDashboard() {
           category: 'Operating Systems',
         },
         {
-          round_number: 3,
+          round_number: 4,
+          difficulty: 'beginner',
           question: 'Which of the following is the official logo of the React library?',
           question_image: '',
           option_a: 'https://upload.wikimedia.org/wikipedia/commons/9/95/Vue.js_Logo_2.svg',
@@ -645,7 +656,8 @@ export default function AdminDashboard() {
           category: 'Web Tech',
         },
         {
-          round_number: 4,
+          round_number: 5,
+          difficulty: 'intermediate',
           question: 'Identify the logo of the Git version control system:',
           question_image: '',
           option_a: 'https://upload.wikimedia.org/wikipedia/commons/e/e0/Git-logo.svg',
@@ -658,7 +670,8 @@ export default function AdminDashboard() {
           category: 'DevOps & Tools',
         },
         {
-          round_number: 5,
+          round_number: 6,
+          difficulty: 'intermediate',
           question: 'Look at the logo below. Which containerization platform does it represent?',
           question_image: 'https://upload.wikimedia.org/wikipedia/commons/4/4e/Docker_%28container_engine%29_logo.svg',
           option_a: 'Docker',
@@ -671,7 +684,8 @@ export default function AdminDashboard() {
           category: 'Cloud & DevOps',
         },
         {
-          round_number: 6,
+          round_number: 7,
+          difficulty: 'intermediate',
           question: 'Which of the following is the logo of PostgreSQL (Elephant)?',
           question_image: '',
           option_a: 'https://upload.wikimedia.org/wikipedia/en/d/dd/MySQL_logo.svg',
@@ -684,7 +698,8 @@ export default function AdminDashboard() {
           category: 'Databases',
         },
         {
-          round_number: 7,
+          round_number: 8,
+          difficulty: 'advanced',
           question: 'Identify the modern programming language represented by this mascot (Ferris):',
           question_image: 'https://upload.wikimedia.org/wikipedia/commons/0/0f/Original_Ferris.svg',
           option_a: 'Rust',
@@ -697,7 +712,8 @@ export default function AdminDashboard() {
           category: 'Programming Languages',
         },
         {
-          round_number: 8,
+          round_number: 9,
+          difficulty: 'advanced',
           question: 'Which of the following is the official logo of GitHub (Octocat)?',
           question_image: '',
           option_a: 'https://upload.wikimedia.org/wikipedia/commons/e/e1/GitLab_logo.svg',
@@ -710,7 +726,8 @@ export default function AdminDashboard() {
           category: 'Developer Platforms',
         },
         {
-          round_number: 9,
+          round_number: 10,
+          difficulty: 'advanced',
           question: 'Which popular JavaScript runtime uses this hexagonal green logo?',
           question_image: 'https://upload.wikimedia.org/wikipedia/commons/d/d9/Node.js_logo.svg',
           option_a: 'Deno',
@@ -723,7 +740,8 @@ export default function AdminDashboard() {
           category: 'Web Tech',
         },
         {
-          round_number: 10,
+          round_number: 11,
+          difficulty: 'advanced',
           question: 'Which of the following is the official cryptocurrency logo of Ethereum?',
           question_image: '',
           option_a: 'https://upload.wikimedia.org/wikipedia/commons/4/46/Bitcoin.svg',
@@ -786,6 +804,66 @@ export default function AdminDashboard() {
 
   const activeLeaderboardData = finalLeaderboard.length > 0 ? finalLeaderboard : roundLeaderboard;
 
+  // ── Difficulty badge color helper ─────────────────────────────────
+  const difficultyBadge = (difficulty) => {
+    const map = {
+      introduction: { cls: 'badge-neutral', label: '📖 Introduction', color: '#6b7280' },
+      beginner:     { cls: 'badge-success', label: '🟢 Beginner',     color: '#10b981' },
+      intermediate: { cls: 'badge-primary', label: '🔵 Intermediate',  color: '#4f46e5' },
+      advanced:     { cls: 'badge-warning', label: '🔥 Advanced',      color: '#f59e0b' },
+    };
+    const d = map[difficulty] || map['beginner'];
+    return <span className={`badge ${d.cls}`} style={{ fontSize: 12, padding: '3px 8px', fontWeight: 700 }}>{d.label}</span>;
+  };
+
+  // ── Clean question text helper (strips welcome prompt from question body) ─
+  const cleanQuestionText = (text) => {
+    if (!text) return '';
+    return String(text)
+      .replace(/^Welcome!?\s*This is an Introduction round with NO scoring\.?\s*/i, '')
+      .replace(/^Welcome to [^!.]+!\s*This is an introduction round with no points\.?\s*/i, '')
+      .trim();
+  };
+
+  // ── Introduction Round Top Announcement Banner (Sleek Black Container) ──
+  const renderIntroBanner = (isProjector = false) => (
+    <div style={{
+      background: '#000000',
+      border: '1.5px solid rgba(255, 255, 255, 0.22)',
+      borderRadius: 14,
+      padding: isProjector ? '14px 22px' : '10px 16px',
+      marginBottom: isProjector ? 18 : 14,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+      boxShadow: '0 8px 32px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.15)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div>
+          <div style={{ fontSize: isProjector ? 18 : 15, fontWeight: 900, color: '#ffffff', letterSpacing: '0.02em' }}>
+            Welcome! This is an Introduction round with NO scoring.
+          </div>
+          <div style={{ fontSize: isProjector ? 13 : 11.5, color: '#94a3b8', marginTop: 3 }}>
+            Practice / Warmup round for all participants • 0 pts • Does not affect leaderboard rankings
+          </div>
+        </div>
+      </div>
+      <span style={{
+        background: 'rgba(255, 255, 255, 0.12)',
+        border: '1px solid rgba(255, 255, 255, 0.25)',
+        color: '#ffffff',
+        borderRadius: 999,
+        padding: isProjector ? '6px 14px' : '4px 10px',
+        fontSize: isProjector ? 12.5 : 11,
+        fontWeight: 800,
+        whiteSpace: 'nowrap',
+        letterSpacing: '0.03em',
+      }}>
+        0 PTS · PRACTICE
+      </span>
+    </div>
+  );
 
   // ═════════════════════════════════════════════════════════════════
   // FULLSCREEN PROJECTOR / ARENA VIEW ("Quiz Control Flow niche aa jaye")
@@ -842,8 +920,7 @@ export default function AdminDashboard() {
                     </span>
                   </div>
                   <div className="projector-reveal-countdown">
-                    <span>Showing Leaderboard in 2s...</span>
-                    <div className="reveal-progress-bar" />
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#e0e7ff' }}>Official Answer Displayed</span>
                   </div>
                 </div>
               )}
@@ -858,6 +935,7 @@ export default function AdminDashboard() {
                       {currentQuestion.category}
                     </span>
                   )}
+                  {currentQuestion.difficulty && difficultyBadge(currentQuestion.difficulty)}
                 </div>
 
                 {roundActive && (
@@ -869,14 +947,17 @@ export default function AdminDashboard() {
                 )}
                 {!roundActive && showingAnswerReveal && (
                   <span className="badge badge-success" style={{ fontSize: 14, padding: '5px 12px', fontWeight: 700 }}>
-                    ⏱ Time is up!
+                    ⏱ Round Closed
                   </span>
                 )}
               </div>
 
+              {/* Introduction Announcement Banner on Top */}
+              {(currentQuestion.difficulty === 'introduction' || /welcome/i.test(currentQuestion.questionText)) && renderIntroBanner(true)}
+
               {/* Large Question Title */}
               <h2 className="projector-question-text">
-                {currentQuestion.questionText}
+                {cleanQuestionText(currentQuestion.questionText)}
               </h2>
 
               {/* Optional Question Image for Projector */}
@@ -925,7 +1006,7 @@ export default function AdminDashboard() {
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--clr-border)', paddingTop: 10 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--clr-text-h)' }}>
-                  ⏱ 20s Round Time Limit · 🏅 {currentQuestion.points || 10} Points
+                  ⏱ {currentQuestion.timeLimitSeconds || 20}s Round Time Limit · 🏅 {currentQuestion.difficulty === 'introduction' ? '0 Pts (Intro Practice Round)' : `${currentQuestion.points || 10} Points`}
                 </span>
                 <span className="badge badge-success" style={{ fontSize: 12, padding: '4px 10px', fontWeight: 700 }}>
                   📩 {stats.totalSubmissions} Submissions Live ({stats.correctCount} Correct)
@@ -1011,6 +1092,37 @@ export default function AdminDashboard() {
                 <button id="dock-btn-close-round" className="btn btn-danger" style={{ fontSize: 13, padding: '6px 14px', fontWeight: 600, whiteSpace: 'nowrap' }} onClick={closeRound}>
                   <Icons.Square size={14} />
                   <span>Close Round</span>
+                </button>
+              )}
+
+              {/* ✅ Manual Reveal Answer Button — only visible when round is closed and we have a question */}
+              {!roundActive && currentQuestion && !showingAnswerReveal && (
+                <button
+                  id="dock-btn-reveal-answer"
+                  className="btn btn-success"
+                  style={{ fontSize: 13, padding: '6px 14px', fontWeight: 700, whiteSpace: 'nowrap', background: 'linear-gradient(135deg, #059669, #10b981)', border: 'none' }}
+                  onClick={revealAnswer}
+                  title="Reveal the correct answer on projector screen"
+                >
+                  <Icons.CheckCircle size={14} />
+                  <span>Reveal Answer</span>
+                </button>
+              )}
+
+              {/* Show Leaderboard Button — when answer is revealed */}
+              {!roundActive && currentQuestion && showingAnswerReveal && (
+                <button
+                  id="dock-btn-show-leaderboard"
+                  className="btn btn-primary"
+                  style={{ fontSize: 13, padding: '6px 14px', fontWeight: 700, whiteSpace: 'nowrap' }}
+                  onClick={() => {
+                    setShowingAnswerReveal(false);
+                    setProjectorViewMode('leaderboard');
+                  }}
+                  title="Switch projector to leaderboard"
+                >
+                  <Icons.Trophy size={14} />
+                  <span>Show Leaderboard</span>
                 </button>
               )}
 
@@ -1225,6 +1337,45 @@ export default function AdminDashboard() {
                     </button>
                   )}
 
+                  {/* ✅ Manual Reveal Answer Button */}
+                  {!roundActive && currentQuestion && !showingAnswerReveal && (
+                    <button
+                      id="btn-reveal-answer"
+                      className="btn btn-full"
+                      onClick={revealAnswer}
+                      style={{
+                        background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                        color: '#fff', fontWeight: 800, fontSize: 15,
+                        border: 'none', borderRadius: 'var(--radius-md)',
+                        padding: '10px 0', display: 'flex', alignItems: 'center',
+                        justifyContent: 'center', gap: 8, cursor: 'pointer',
+                        boxShadow: '0 4px 14px rgba(16,185,129,0.35)',
+                      }}
+                    >
+                      <Icons.CheckCircle size={18} /> Reveal Correct Answer
+                    </button>
+                  )}
+
+                  {!roundActive && currentQuestion && showingAnswerReveal && (
+                    <button
+                      id="btn-show-leaderboard"
+                      className="btn btn-full"
+                      onClick={() => {
+                        setShowingAnswerReveal(false);
+                        setProjectorViewMode('leaderboard');
+                      }}
+                      style={{
+                        background: 'linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)',
+                        color: '#fff', fontWeight: 800, fontSize: 15,
+                        border: 'none', borderRadius: 'var(--radius-md)',
+                        padding: '10px 0', display: 'flex', alignItems: 'center',
+                        justifyContent: 'center', gap: 8, cursor: 'pointer',
+                      }}
+                    >
+                      <Icons.Trophy size={18} /> View Leaderboard
+                    </button>
+                  )}
+
                   {isLive && (
                     <button id="btn-pause" className="btn btn-secondary btn-full" onClick={pauseGame}>
                       <Icons.Pause size={16} /> Pause Quiz
@@ -1290,7 +1441,7 @@ export default function AdminDashboard() {
                         <span>CORRECT ANSWER REVEALED</span>
                       </div>
                       <span style={{ fontSize: 13, background: 'rgba(0,0,0,0.2)', padding: '3px 10px', borderRadius: 999, fontWeight: 700 }}>
-                        Showing Leaderboard in 2s...
+                        Official Answer Displayed
                       </span>
                     </div>
                   )}
@@ -1305,6 +1456,8 @@ export default function AdminDashboard() {
                           {currentQuestion.category}
                         </span>
                       )}
+                      {/* Difficulty badge */}
+                      {currentQuestion.difficulty && difficultyBadge(currentQuestion.difficulty)}
                     </div>
                     {roundActive && (
                       <span className="badge badge-success" style={{ fontSize: 14, padding: '6px 12px', fontWeight: 700 }}>
@@ -1318,8 +1471,11 @@ export default function AdminDashboard() {
                     )}
                   </div>
 
+                  {/* Introduction Announcement Banner on Top */}
+                  {(currentQuestion.difficulty === 'introduction' || /welcome/i.test(currentQuestion.questionText)) && renderIntroBanner(false)}
+
                   <h3 style={{ fontSize: 22, color: 'var(--clr-text-h)', marginBottom: 14, fontWeight: 800, lineHeight: 1.35 }}>
-                    {currentQuestion.questionText}
+                    {cleanQuestionText(currentQuestion.questionText)}
                   </h3>
 
                   {/* Question Image Preview in Admin Card */}
@@ -1495,6 +1651,7 @@ export default function AdminDashboard() {
                   <thead>
                     <tr>
                       <th style={{ width: 80 }}>Round</th>
+                      <th style={{ width: 140 }}>Difficulty</th>
                       <th>Question</th>
                       <th>Options (A, B, C, D)</th>
                       <th style={{ width: 120 }}>Category</th>
@@ -1509,6 +1666,12 @@ export default function AdminDashboard() {
                           <span className="badge badge-primary">Round {q.roundNumber}</span>
                         </td>
                         <td>
+                          {difficultyBadge(q.difficulty || 'beginner')}
+                          {(q.difficulty === 'introduction') && (
+                            <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4, fontStyle: 'italic' }}>0 pts · No Scoring</div>
+                          )}
+                        </td>
+                        <td>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             {q.questionImage && (
                               <img
@@ -1517,7 +1680,7 @@ export default function AdminDashboard() {
                                 style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--clr-border)', flexShrink: 0 }}
                               />
                             )}
-                            <strong style={{ color: 'var(--clr-text-h)' }}>{q.questionText}</strong>
+                            <strong style={{ color: 'var(--clr-text-h)' }}>{cleanQuestionText(q.questionText)}</strong>
                           </div>
                         </td>
                         <td>
@@ -1547,8 +1710,8 @@ export default function AdminDashboard() {
                         <td>
                           <span className="badge badge-purple">{q.category || 'General'}</span>
                         </td>
-                        <td>20s</td>
-                        <td>{q.points || 10} pts</td>
+                        <td>{q.timeLimitSeconds || 20}s</td>
+                        <td><span style={{ fontWeight: 700, color: q.difficulty === 'introduction' ? '#6b7280' : '#10b981' }}>{q.difficulty === 'introduction' ? '0 pts' : (q.points || 10) + ' pts'}</span></td>
                       </tr>
                     ))}
                   </tbody>
