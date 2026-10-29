@@ -24,6 +24,12 @@ const eventSchema = new mongoose.Schema({
     ref: 'Question',
     default: null,
   },
+  playedQuestionIds: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Question',
+    },
+  ],
   pointsPerCorrectAnswer: {
     type: Number,
     default: 10,

@@ -59,6 +59,7 @@ router.post('/upload', authMiddleware, upload.single('file'), async (req, res) =
     event.totalRounds = questions.length;
     event.status = 'ready';
     event.currentRoundNumber = 0;
+    event.playedQuestionIds = [];
     await event.save();
 
     res.json({

@@ -2223,7 +2223,7 @@ export default function AdminDashboard() {
                       <th>Course / Department</th>
                       <th>Total Score</th>
                       <th>Accuracy</th>
-                      <th>Avg Speed</th>
+                      <th>Time Taken</th>
                     </tr>
                   </thead>
                   <tbody>

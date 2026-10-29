@@ -305,6 +305,7 @@ const initSocketHandlers = (io) => {
         event.status = 'live';
         event.startedAt = new Date();
         event.currentRoundNumber = 0;
+        event.playedQuestionIds = [];
         await event.save();
 
         io.emit('game:started', { message: 'Quiz has started! Get ready...' });
@@ -333,13 +334,31 @@ const initSocketHandlers = (io) => {
           return socket.emit('error', { message: 'No more questions. End the game.' });
         }
 
+        const playedIds = (event.playedQuestionIds || []).map(id => id.toString());
+
         let question = await Question.findOne({ eventId: event._id, roundNumber: nextRound });
+
+        // If the question assigned to nextRound was already played in a previous round, swap with an unplayed question ahead
+        if (question && playedIds.includes(question._id.toString())) {
+          const replacementQ = await Question.findOne({
+            eventId: event._id,
+            _id: { $nin: event.playedQuestionIds || [] },
+            roundNumber: { $gt: event.currentRoundNumber },
+          }).sort({ roundNumber: 1 });
+
+          if (replacementQ) {
+            await safeSwapQuestionRounds(question, replacementQ);
+            question = replacementQ;
+          }
+        }
 
         // If admin requested a specific difficulty for the next question:
         const reqDifficulty = data?.difficulty;
         if (reqDifficulty && question && question.difficulty !== reqDifficulty) {
+          // Strictly search among UNPLAYED questions ahead (never search backwards)
           const targetQ = await Question.findOne({
             eventId: event._id,
+            _id: { $nin: event.playedQuestionIds || [], $ne: question._id },
             difficulty: reqDifficulty,
             roundNumber: { $gt: event.currentRoundNumber },
           }).sort({ roundNumber: 1 });
@@ -348,6 +367,7 @@ const initSocketHandlers = (io) => {
             await safeSwapQuestionRounds(question, targetQ);
             question = targetQ;
           } else {
+            // No unplayed question of this difficulty exists ahead - adapt difficulty & points in-place!
             question.difficulty = reqDifficulty;
             question.points = reqDifficulty === 'introduction' ? 0 : (reqDifficulty === 'intermediate' ? 15 : (reqDifficulty === 'advanced' ? 20 : 10));
             await question.save();
@@ -356,6 +376,12 @@ const initSocketHandlers = (io) => {
 
         if (!question) {
           return socket.emit('error', { message: `Question for round ${nextRound} not found` });
+        }
+
+        // Record this question in playedQuestionIds
+        if (!event.playedQuestionIds) event.playedQuestionIds = [];
+        if (!event.playedQuestionIds.some(id => id.toString() === question._id.toString())) {
+          event.playedQuestionIds.push(question._id);
         }
 
         const now = new Date();
@@ -541,39 +567,25 @@ const initSocketHandlers = (io) => {
         if (event.status === 'live' && event.roundTimer?.roundStatus === 'active') {
           clearRoundTimeout();
 
-          // 1. Search for an unplayed question in this event with the target difficulty
+          const playedIds = (event.playedQuestionIds || []).map(id => id.toString());
+          const currentQ = await Question.findById(event.currentQuestionId);
+
+          // 1. Search for an UNPLAYED question ahead in this event with the target difficulty
           let targetQuestion = await Question.findOne({
             eventId: event._id,
-            _id: { $ne: event.currentQuestionId },
+            _id: { $nin: event.playedQuestionIds || [], $ne: event.currentQuestionId },
             difficulty,
             roundNumber: { $gt: event.currentRoundNumber },
           }).sort({ roundNumber: 1 });
 
-          // If none found ahead, search for any other question of this difficulty
+          // 2. If no unplayed question ahead has this difficulty, pick the next unplayed question ahead and convert its difficulty
           if (!targetQuestion) {
             targetQuestion = await Question.findOne({
               eventId: event._id,
-              _id: { $ne: event.currentQuestionId },
-              difficulty,
-            });
-          }
-
-          // If still no question has this difficulty in the database:
-          // Pick the next available unplayed question and convert it to this difficulty!
-          if (!targetQuestion) {
-            targetQuestion = await Question.findOne({
-              eventId: event._id,
-              _id: { $ne: event.currentQuestionId },
+              _id: { $nin: event.playedQuestionIds || [], $ne: event.currentQuestionId },
               roundNumber: { $gt: event.currentRoundNumber },
             }).sort({ roundNumber: 1 });
 
-            if (!targetQuestion) {
-              targetQuestion = await Question.findOne({
-                eventId: event._id,
-                _id: { $ne: event.currentQuestionId },
-              });
-            }
-
             if (targetQuestion) {
               targetQuestion.difficulty = difficulty;
               targetQuestion.points = defaultPoints;
@@ -581,14 +593,12 @@ const initSocketHandlers = (io) => {
             }
           }
 
-          // If no other question exists in the event at all, adapt current question
-          if (!targetQuestion) {
-            targetQuestion = await Question.findById(event.currentQuestionId);
-            if (targetQuestion) {
-              targetQuestion.difficulty = difficulty;
-              targetQuestion.points = defaultPoints;
-              await targetQuestion.save();
-            }
+          // 3. If no unplayed question exists ahead (e.g. final round), adapt the CURRENT question in-place
+          if (!targetQuestion && currentQ) {
+            targetQuestion = currentQ;
+            targetQuestion.difficulty = difficulty;
+            targetQuestion.points = defaultPoints;
+            await targetQuestion.save();
           }
 
           if (!targetQuestion) {
@@ -596,11 +606,10 @@ const initSocketHandlers = (io) => {
           }
 
           // Swap round numbers safely so the current round keeps its sequence smoothly
-          const currentQ = await Question.findById(event.currentQuestionId);
           if (currentQ && targetQuestion._id.toString() !== currentQ._id.toString()) {
             await safeSwapQuestionRounds(currentQ, targetQuestion);
             targetQuestion.difficulty = difficulty;
-            targetQuestion.points = targetQuestion.points || defaultPoints;
+            targetQuestion.points = defaultPoints;
             await targetQuestion.save();
 
             // Clear any mid-round submissions for the replaced question so all students can answer the new question
@@ -609,10 +618,16 @@ const initSocketHandlers = (io) => {
               questionId: currentQ._id,
               roundNumber: event.currentRoundNumber,
             });
-          } else {
-            targetQuestion.difficulty = difficulty;
-            targetQuestion.points = defaultPoints;
-            await targetQuestion.save();
+
+            // Update playedQuestionIds: remove replaced currentQ, and add targetQuestion
+            event.playedQuestionIds = (event.playedQuestionIds || []).filter(
+              id => id.toString() !== currentQ._id.toString()
+            );
+          }
+
+          if (!event.playedQuestionIds) event.playedQuestionIds = [];
+          if (!event.playedQuestionIds.some(id => id.toString() === targetQuestion._id.toString())) {
+            event.playedQuestionIds.push(targetQuestion._id);
           }
 
           event.currentQuestionId = targetQuestion._id;
@@ -686,7 +701,7 @@ const initSocketHandlers = (io) => {
         if (question) {
           let matchingQ = await Question.findOne({
             eventId: event._id,
-            _id: { $ne: question._id },
+            _id: { $nin: event.playedQuestionIds || [], $ne: question._id },
             difficulty,
             roundNumber: { $gt: event.currentRoundNumber },
           }).sort({ roundNumber: 1 });
@@ -699,8 +714,6 @@ const initSocketHandlers = (io) => {
             question.points = defaultPoints;
             await question.save();
           }
-        } else {
-          question = await Question.findOne({ eventId: event._id, difficulty });
         }
 
         if (question) {
