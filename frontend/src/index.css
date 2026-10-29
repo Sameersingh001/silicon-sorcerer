@@ -827,6 +827,20 @@ h1, h2, h3, h4, h5, h6 {
   overflow: hidden;
 }
 
+/* Invisible smooth scrolling on projector view (No scrollbars visible) */
+.projector-mode,
+.projector-mode * {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+.projector-mode::-webkit-scrollbar,
+.projector-mode *::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
 .projector-topbar {
   display: flex;
   align-items: center;
@@ -843,9 +857,10 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 8px 24px 50px; /* leaves clean room for dock without squishing content */
+  justify-content: flex-start;
+  padding: 16px 24px 120px;
   overflow-y: auto;
+  scroll-behavior: smooth;
   max-width: min(1380px, 94vw);
   width: 100%;
   margin: 0 auto;
@@ -1006,12 +1021,10 @@ h1, h2, h3, h4, h5, h6 {
   border: 1px solid var(--clr-border);
   border-radius: var(--radius-xl);
   box-shadow: 0 16px 40px -10px rgba(15, 23, 42, 0.1);
-  padding: 18px 24px;
+  padding: 24px 28px 36px;
   width: 100%;
-  max-height: calc(100vh - 125px);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   animation: fadeIn 0.2s ease-out;
 }
 
@@ -1085,7 +1098,7 @@ h1, h2, h3, h4, h5, h6 {
 .podium-stage-wrapper {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   width: 100%;
 }
 
@@ -2607,5 +2620,7 @@ h1, h2, h3, h4, h5, h6 {
   align-items: center;
   justify-content: center;
 }
+
+
 
 

@@ -87,6 +87,56 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
+// PATCH /api/questions/:id/difficulty - Update difficulty of a question
+router.patch('/:id/difficulty', authMiddleware, async (req, res) => {
+  try {
+    const { difficulty } = req.body;
+    const valid = ['introduction', 'beginner', 'intermediate', 'advanced'];
+    if (!valid.includes(difficulty)) {
+      return res.status(400).json({ success: false, message: 'Invalid difficulty level' });
+    }
+
+    const question = await Question.findById(req.params.id);
+    if (!question) {
+      return res.status(404).json({ success: false, message: 'Question not found' });
+    }
+
+    question.difficulty = difficulty;
+    if (difficulty === 'introduction') {
+      question.points = 0;
+    } else if (!question.points || question.points === 0) {
+      question.points = difficulty === 'intermediate' ? 15 : (difficulty === 'advanced' ? 20 : 10);
+    }
+    await question.save();
+
+    // Check if this question is currently active in the event
+    const event = await getOrCreateEvent();
+    if (event.currentQuestionId && event.currentQuestionId.toString() === question._id.toString()) {
+      const { updateActiveRoundDifficulty } = require('../utils/submissionEngine');
+      updateActiveRoundDifficulty(difficulty, question.points);
+    }
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('question:difficulty_updated', {
+        questionId: question._id,
+        roundNumber: question.roundNumber,
+        difficulty: question.difficulty,
+        points: question.points,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Difficulty updated to ${difficulty}`,
+      question,
+    });
+  } catch (error) {
+    console.error('Update difficulty error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update difficulty' });
+  }
+});
+
 // GET /api/questions/template - Download sample template with difficulty levels
 router.get('/template', (req, res) => {
   const sampleData = [

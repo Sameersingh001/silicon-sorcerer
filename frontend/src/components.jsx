@@ -36,9 +36,9 @@ export function TimerCircle({ remainingMs, totalMs, compact = false, large = fal
   const size = compact ? 88 : large ? 96 : 116;
   const strokeWidth = compact ? 6 : large ? 6 : 7;
   const circumference = 2 * Math.PI * radius;
-  const pct = totalMs > 0 ? Math.max(0, remainingMs / totalMs) : 0;
+  const pct = totalMs > 0 ? Math.max(0, Math.min(1, remainingMs / totalMs)) : 0;
   const offset = circumference * (1 - pct);
-  const secs = Math.ceil(remainingMs / 1000);
+  const secs = Math.max(0, Math.ceil(remainingMs / 1000));
   const isDanger = secs <= 5;
   const isWarning = secs <= 15 && !isDanger;
 
@@ -74,7 +74,7 @@ export function TimerCircle({ remainingMs, totalMs, compact = false, large = fal
           strokeDashoffset={offset}
           strokeLinecap="round"
           style={{
-            transition: 'stroke-dashoffset 0.25s linear, stroke 0.3s ease',
+            transition: 'stroke-dashoffset 0.05s linear, stroke 0.3s ease',
           }}
         />
       </svg>

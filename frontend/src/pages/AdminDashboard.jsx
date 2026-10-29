@@ -36,7 +36,7 @@ const LivePodiumShowcase = ({
 }) => {
   const isFinal = finalLeaderboard && finalLeaderboard.length > 0;
   const topThree = activeLeaderboardData.slice(0, 3);
-  const runnerUps = activeLeaderboardData.slice(3, 10);
+  const allRanked = activeLeaderboardData; // show everyone
 
   return (
     <div className="podium-showcase-card">
@@ -54,7 +54,7 @@ const LivePodiumShowcase = ({
               {roundActive ? (
                 <span className="badge badge-success" style={{ fontSize: isProjector ? 13 : 11, padding: '4px 10px' }}>
                   <span className="status-dot live" style={{ width: 6, height: 6, display: 'inline-block', marginRight: 4 }} />
-                  Round {currentRound} Live
+                  Q{currentRound} Live
                 </span>
               ) : (
                 <span className="badge badge-purple" style={{ fontSize: isProjector ? 13 : 11, padding: '4px 10px' }}>
@@ -66,7 +66,7 @@ const LivePodiumShowcase = ({
             <p style={{ fontSize: isProjector ? 14 : 12, color: 'var(--clr-text)', margin: '3px 0 0 0' }}>
               {isFinal
                 ? 'Official tournament champions crowned by total points & response speed'
-                : `Live standings after Round ${currentRound} of ${totalRounds}`}
+                : `Live standings after Q${currentRound} of ${totalRounds}`}
             </p>
           </div>
         </div>
@@ -204,22 +204,190 @@ const LivePodiumShowcase = ({
             )}
           </div>
 
-          {/* Runners-up quick strip (Ranks 4-10) */}
-          {runnerUps.length > 0 && (
-            <div className="podium-runners-strip">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: 'var(--clr-text-muted)', flexShrink: 0 }}>
-                <Icons.Flame size={14} color="#f59e0b" />
-                <span>Top Contenders (4–{3 + runnerUps.length}):</span>
-              </div>
-              {runnerUps.map((runner) => (
-                <div key={runner.participantId} className="podium-runner-badge" title={`${runner.fullName} (${runner.course || 'Participant'})`}>
-                  <strong style={{ color: 'var(--clr-primary)' }}>#{runner.rank}</strong>
-                  <span>{runner.fullName}</span>
-                  <span style={{ color: 'var(--clr-text-muted)', fontSize: 11 }}>
-                    ({runner.totalScore ?? runner.pointsAwarded ?? 0} pts · {fmtMs(runner.totalResponseTimeMs ?? runner.responseTimeMs ?? 0)})
+          {/* Full Ranked Table — all participants (Compact & Clean) */}
+          {allRanked.length > 0 && (
+            <div style={{
+              marginTop: 12,
+              borderTop: '1px solid var(--clr-border)',
+              paddingTop: 10,
+              paddingBottom: 0,
+              width: '100%',
+              boxSizing: 'border-box',
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 8,
+                flexWrap: 'wrap',
+                gap: 6,
+              }}>
+                <div style={{
+                  fontSize: 12,
+                  fontWeight: 800,
+                  color: 'var(--clr-text-h)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}>
+                  <span>{isFinal ? 'Final Standings · All Participants' : `Q${currentRound} Results · All Participants`}</span>
+                  <span className="badge badge-purple" style={{ fontSize: 10.5, padding: '1px 6px' }}>
+                    {allRanked.length} {allRanked.length === 1 ? 'Contender' : 'Contenders'}
                   </span>
                 </div>
-              ))}
+                <span style={{ fontSize: 11.5, color: 'var(--clr-text-muted)', fontWeight: 600 }}>
+                  Ranked by Points & Speed
+                </span>
+              </div>
+
+              <div style={{
+                width: '100%',
+                maxHeight: isProjector ? 'none' : 280,
+                overflowY: isProjector ? 'visible' : 'auto',
+                borderRadius: 10,
+                border: '1px solid var(--clr-border)',
+                background: 'var(--clr-card, #ffffff)',
+                boxShadow: '0 1px 4px rgba(0,0,0,0.03)',
+                boxSizing: 'border-box',
+                marginBottom: 0,
+              }}>
+                <table style={{
+                  width: '100%',
+                  minWidth: '100%',
+                  borderCollapse: 'collapse',
+                  fontSize: isProjector ? 14 : 12,
+                  textAlign: 'left',
+                }}>
+                  <thead>
+                    <tr style={{
+                      background: 'var(--clr-card-alt, rgba(0,0,0,0.04))',
+                      borderBottom: '1px solid var(--clr-border)',
+                      position: 'sticky',
+                      top: 0,
+                      zIndex: 1,
+                    }}>
+                      <th style={{ padding: '7px 12px', textAlign: 'center', fontWeight: 700, color: 'var(--clr-text-muted)', width: 50 }}>#</th>
+                      <th style={{ padding: '7px 14px', textAlign: 'left', fontWeight: 700, color: 'var(--clr-text-muted)' }}>Participant</th>
+                      <th style={{ padding: '7px 14px', textAlign: 'center', fontWeight: 700, color: 'var(--clr-text-muted)', width: 95 }}>Points</th>
+                      <th style={{ padding: '7px 14px', textAlign: 'center', fontWeight: 700, color: 'var(--clr-text-muted)', width: 105 }}>Time Taken</th>
+                      {!isFinal && (
+                        <th style={{ padding: '7px 14px', textAlign: 'center', fontWeight: 700, color: 'var(--clr-text-muted)', width: 95 }}>Result</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allRanked.map((item, i) => {
+                      const isTopThree = item.rank <= 3;
+                      const rankBg = item.rank === 1 ? 'rgba(245, 158, 11, 0.08)' : item.rank === 2 ? 'rgba(100, 116, 139, 0.08)' : item.rank === 3 ? 'rgba(217, 119, 6, 0.06)' : (i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.015)');
+                      const rankColor = item.rank === 1 ? '#d97706' : item.rank === 2 ? '#64748b' : item.rank === 3 ? '#b45309' : 'var(--clr-text-muted)';
+
+                      return (
+                        <tr
+                          key={item.participantId}
+                          style={{
+                            background: rankBg,
+                            borderBottom: '1px solid var(--clr-border)',
+                            transition: 'background 0.15s ease',
+                          }}
+                        >
+                          <td style={{
+                            padding: '7px 12px',
+                            textAlign: 'center',
+                            fontWeight: 800,
+                            color: rankColor,
+                            fontSize: isTopThree ? 13.5 : 12,
+                          }}>
+                            <span style={{
+                              display: 'inline-block',
+                              minWidth: 24,
+                              padding: '2px 6px',
+                              borderRadius: 4,
+                              background: isTopThree ? `${rankColor}18` : 'rgba(0,0,0,0.04)',
+                            }}>
+                              #{item.rank}
+                            </span>
+                          </td>
+                          <td style={{ padding: '7px 14px' }}>
+                            <div style={{ fontWeight: isTopThree ? 700 : 600, color: 'var(--clr-text-h)', fontSize: isProjector ? 14 : 12.5 }}>
+                              {item.fullName}
+                            </div>
+                            {item.course && (
+                              <div style={{ fontSize: 11, color: 'var(--clr-text-muted)', marginTop: 1 }}>
+                                {item.course}
+                              </div>
+                            )}
+                          </td>
+                          <td style={{
+                            padding: '7px 14px',
+                            textAlign: 'center',
+                            fontWeight: 800,
+                            fontSize: 12.5,
+                            color: (item.totalScore ?? item.pointsAwarded ?? 0) > 0
+                              ? '#059669'
+                              : (item.totalScore ?? item.pointsAwarded ?? 0) < 0
+                              ? '#dc2626'
+                              : 'var(--clr-text-muted)',
+                          }}>
+                            <span style={{
+                              display: 'inline-block',
+                              padding: '2px 8px',
+                              borderRadius: 999,
+                              background: (item.totalScore ?? item.pointsAwarded ?? 0) > 0
+                                ? 'rgba(16, 185, 129, 0.12)'
+                                : (item.totalScore ?? item.pointsAwarded ?? 0) < 0
+                                ? 'rgba(239, 68, 68, 0.14)'
+                                : 'rgba(0,0,0,0.04)',
+                              color: (item.totalScore ?? item.pointsAwarded ?? 0) < 0 ? '#dc2626' : 'inherit',
+                            }}>
+                              {item.totalScore ?? item.pointsAwarded ?? 0} pts
+                            </span>
+                          </td>
+                          <td style={{
+                            padding: '7px 14px',
+                            textAlign: 'center',
+                            color: 'var(--clr-text)',
+                            fontSize: 12,
+                            fontWeight: 600,
+                          }}>
+                            {fmtMs(item.totalResponseTimeMs ?? item.responseTimeMs ?? 0)}
+                          </td>
+                          {!isFinal && (
+                            <td style={{ padding: '7px 14px', textAlign: 'center' }}>
+                              {item.isCorrect ? (
+                                <span style={{
+                                  display: 'inline-block',
+                                  padding: '2px 8px',
+                                  borderRadius: 4,
+                                  background: 'rgba(16, 185, 129, 0.15)',
+                                  color: '#059669',
+                                  fontWeight: 700,
+                                  fontSize: 11.5,
+                                }}>
+                                  Correct
+                                </span>
+                              ) : (
+                                <span style={{
+                                  display: 'inline-block',
+                                  padding: '2px 8px',
+                                  borderRadius: 4,
+                                  background: 'rgba(239, 68, 68, 0.12)',
+                                  color: '#dc2626',
+                                  fontWeight: 700,
+                                  fontSize: 11.5,
+                                }}>
+                                  {item.submittedAnswer === 'No submission' ? 'Timed Out' : 'Wrong'}
+                                </span>
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
@@ -276,10 +444,18 @@ export default function AdminDashboard() {
   const [activeCheatAlert, setActiveCheatAlert] = useState(null);
   const [cheatAlertsHistory, setCheatAlertsHistory] = useState([]);
 
-  // Timer countdown (20 seconds)
+  // Selected difficulty override
+  const [selectedDifficulty, setSelectedDifficulty] = useState(null);
+
+  // Timer countdown with accurate server timestamp synchronization (no delay/desync)
+  const activeDeadline = gameState?.roundTimer?.roundStatus === 'active'
+    ? gameState?.roundTimer?.deadlineAt
+    : (currentQuestion?.deadlineAt || null);
+  const activeServerTime = currentQuestion?.serverTime || gameState?.roundTimer?.serverTime || gameState?.serverTime || null;
+
   const remaining = useCountdown(
-    gameState?.roundTimer?.roundStatus === 'active' ? gameState?.roundTimer?.deadlineAt : null,
-    null
+    activeDeadline,
+    activeServerTime
   );
 
   // Current question ref to prevent stale closures
@@ -340,8 +516,9 @@ export default function AdminDashboard() {
     if (!token) return;
 
     const socket = io(API_BASE, {
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
+      transports: ['websocket', 'polling'],
+      reconnectionAttempts: 15,
+      reconnectionDelay: 500,
     });
     socketRef.current = socket;
 
@@ -357,6 +534,15 @@ export default function AdminDashboard() {
       setStats((prev) => ({ ...prev, participantCount: st.participantCount }));
     });
 
+    socket.on('game:paused', () => {
+      showToast('Quiz paused by host', 'warning');
+    });
+
+    socket.on('game:resumed', ({ deadlineAt, serverTime } = {}) => {
+      setCurrentQuestion((prev) => prev ? { ...prev, deadlineAt, serverTime } : prev);
+      showToast('Quiz resumed!', 'info');
+    });
+
     socket.on('question:admin', (q) => {
       if (revealTimerRef.current) {
         clearTimeout(revealTimerRef.current);
@@ -364,12 +550,17 @@ export default function AdminDashboard() {
       }
       setRevealedAnswer(null);
       setShowingAnswerReveal(false);
+      setSelectedDifficulty(null);
       setCurrentQuestion(q);
       setSubmissions([]);
       setRoundLeaderboard([]);
       setProjectorViewMode('question'); // Switch projector to question view
       setStats((prev) => ({ ...prev, totalSubmissions: 0, correctCount: 0 }));
-      showToast(`Round ${q.roundNumber} is now LIVE (20s)!`, 'info');
+      if (q.switchedAtRuntime) {
+        showToast(`⚡ Switched to ${q.difficulty?.toUpperCase()} question in real-time!`, 'success');
+      } else {
+        showToast(`Q${q.roundNumber} is now LIVE (20s)!`, 'info');
+      }
     });
 
     socket.on('submission:new', (sub) => {
@@ -393,11 +584,32 @@ export default function AdminDashboard() {
     };
 
     socket.on('round:closed', ({ roundNumber }) => {
-      showToast(`Round ${roundNumber} time is up! Round closed.`, 'info');
+      showToast(`Q${roundNumber} time is up! Closed.`, 'info');
     });
 
     socket.on('question:answer_reveal', ({ correctAnswer }) => {
       triggerAnswerReveal(correctAnswer);
+    });
+
+    socket.on('question:difficulty_updated', (data) => {
+      setCurrentQuestion((prev) => {
+        if (!prev) return prev;
+        if ((data.questionId && prev._id === data.questionId) || (data.roundNumber && prev.roundNumber === data.roundNumber)) {
+          return { ...prev, difficulty: data.difficulty, points: data.points };
+        }
+        return prev;
+      });
+      setQuestions((prevList) => prevList.map((q) => {
+        if ((data.questionId && q._id === data.questionId) || (data.roundNumber && q.roundNumber === data.roundNumber)) {
+          return { ...q, difficulty: data.difficulty, points: data.points };
+        }
+        return q;
+      }));
+      if (data.switchedAtRuntime) {
+        showToast(`⚡ Round switched to ${data.difficulty.toUpperCase()} in real-time!`, 'success');
+      } else {
+        showToast(`Q${data.roundNumber || 'next'} difficulty: ${data.difficulty.toUpperCase()}!`, 'info');
+      }
     });
 
     socket.on('leaderboard:round', ({ roundNumber, leaderboard }) => {
@@ -406,7 +618,7 @@ export default function AdminDashboard() {
       if (!revealTimerRef.current) {
         setProjectorViewMode('leaderboard');
       }
-      showToast(`Round ${roundNumber} leaderboard updated!`, 'success');
+      showToast(`Q${roundNumber} leaderboard updated!`, 'success');
     });
 
     socket.on('leaderboard:final', ({ leaderboard }) => {
@@ -467,13 +679,72 @@ export default function AdminDashboard() {
     emit('admin:start_quiz');
     setIsProjectorMode(true);
   };
-  const nextQuestion = () => emit('admin:next_question');
+  const nextQuestion = () => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('admin:next_question', { difficulty: selectedDifficulty || null });
+      setSelectedDifficulty(null);
+    } else {
+      showToast('Not connected to server', 'error');
+    }
+  };
   const pauseGame = () => emit('admin:pause');
   const resumeGame = () => emit('admin:resume');
   const closeRound = () => emit('admin:close_round');
   const endGame = () => { if (confirm('End the game for all participants?')) emit('admin:end_game'); };
   const getLeaderboard = () => emit('admin:get_leaderboard');
   const revealAnswer = () => emit('admin:reveal_answer');
+
+  const handleUpdateDifficulty = async (targetDifficulty, questionId = null, roundNum = null) => {
+    setSelectedDifficulty(targetDifficulty);
+    const qId = questionId || currentQuestion?._id;
+    const rNum = roundNum || currentQuestion?.roundNumber || (currentRound + 1);
+
+    if (roundActive) {
+      showToast(`⚡ Switching to ${targetDifficulty.toUpperCase()} question in real-time...`, 'info');
+    }
+
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('admin:change_question_difficulty', {
+        questionId: qId,
+        roundNumber: rNum,
+        difficulty: targetDifficulty,
+      });
+    }
+
+    if (qId && !roundActive) {
+      try {
+        await apiFetch(`/api/questions/${qId}/difficulty`, {
+          method: 'PATCH',
+          body: JSON.stringify({ difficulty: targetDifficulty }),
+        });
+      } catch (err) {
+        console.error('Failed to update difficulty via API:', err);
+      }
+    }
+
+    if (!roundActive && currentQuestion && (!qId || currentQuestion._id === qId || currentQuestion.roundNumber === rNum)) {
+      setCurrentQuestion((prev) => prev ? {
+        ...prev,
+        difficulty: targetDifficulty,
+        points: targetDifficulty === 'introduction' ? 0 : (prev.points === 0 ? 10 : prev.points),
+      } : null);
+    }
+
+    setQuestions((prevList) => prevList.map((q) => {
+      if ((qId && q._id === qId) || (rNum && q.roundNumber === rNum)) {
+        return {
+          ...q,
+          difficulty: targetDifficulty,
+          points: targetDifficulty === 'introduction' ? 0 : (q.points === 0 ? 10 : q.points),
+        };
+      }
+      return q;
+    }));
+
+    if (!roundActive) {
+      showToast(`Difficulty set to ${targetDifficulty.toUpperCase()}!`, 'success');
+    }
+  };
 
   const resetEvent = async () => {
     if (!confirm('This will delete all questions, submissions and participants. Continue?')) return;
@@ -503,11 +774,11 @@ export default function AdminDashboard() {
   };
 
   const restartQuiz = async () => {
-    if (!confirm('Restart quiz from Round 1? (Uploaded questions will be kept, participant scores will reset). Continue?')) return;
+    if (!confirm('Restart quiz from Q1? (Uploaded questions will be kept, participant scores will reset). Continue?')) return;
     try {
       const d = await apiFetch('/api/events/restart', { method: 'POST' });
       if (d.success) {
-        showToast('Quiz restarted from Round 1!', 'success');
+        showToast('Quiz restarted from Q1!', 'success');
         setGameState({ status: 'ready', currentRoundNumber: 0, totalRounds: questions.length });
         setCurrentQuestion(null);
         setRevealedAnswer(null);
@@ -804,16 +1075,175 @@ export default function AdminDashboard() {
 
   const activeLeaderboardData = finalLeaderboard.length > 0 ? finalLeaderboard : roundLeaderboard;
 
-  // ── Difficulty badge color helper ─────────────────────────────────
-  const difficultyBadge = (difficulty) => {
+  // ── Active Difficulty detection for current / upcoming round ───────
+  const activeDifficulty = selectedDifficulty || currentQuestion?.difficulty ||
+    questions.find((q) => q.roundNumber === currentRound)?.difficulty ||
+    questions.find((q) => q.roundNumber === (currentRound + 1))?.difficulty ||
+    'beginner';
+
+  // ── Difficulty badge color helper (Clean names, NO emojis) ─────────
+  const difficultyBadge = (difficulty, large = false) => {
     const map = {
-      introduction: { cls: 'badge-neutral', label: '📖 Introduction', color: '#6b7280' },
-      beginner:     { cls: 'badge-success', label: '🟢 Beginner',     color: '#10b981' },
-      intermediate: { cls: 'badge-primary', label: '🔵 Intermediate',  color: '#4f46e5' },
-      advanced:     { cls: 'badge-warning', label: '🔥 Advanced',      color: '#f59e0b' },
+      introduction: { cls: 'badge-neutral', label: 'Introduction', color: '#64748b', bg: 'rgba(100, 116, 139, 0.12)', border: 'rgba(100, 116, 139, 0.3)' },
+      beginner:     { cls: 'badge-success', label: 'Beginner',     color: '#059669', bg: 'rgba(16, 185, 129, 0.12)',  border: 'rgba(16, 185, 129, 0.3)' },
+      intermediate: { cls: 'badge-primary', label: 'Intermediate', color: '#4f46e5', bg: 'rgba(79, 70, 229, 0.12)',   border: 'rgba(99, 102, 241, 0.3)' },
+      advanced:     { cls: 'badge-warning', label: 'Advanced',     color: '#d97706', bg: 'rgba(245, 158, 11, 0.12)',  border: 'rgba(245, 158, 11, 0.3)' },
     };
     const d = map[difficulty] || map['beginner'];
-    return <span className={`badge ${d.cls}`} style={{ fontSize: 12, padding: '3px 8px', fontWeight: 700 }}>{d.label}</span>;
+    return (
+      <span
+        className={`badge ${d.cls}`}
+        style={{
+          fontSize: large ? 13 : 11.5,
+          padding: large ? '5px 12px' : '3px 9px',
+          fontWeight: 700,
+          background: d.bg,
+          border: `1px solid ${d.border}`,
+          color: d.color,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          letterSpacing: '0.02em',
+          borderRadius: 999,
+          boxShadow: large ? `0 2px 10px ${d.color}25` : 'none',
+        }}
+      >
+        {d.label}
+      </span>
+    );
+  };
+
+  // ── Difficulty Level Switcher Button Group (Interactive, NO emojis, Perfect Fit) ──
+  const renderDifficultySwitcher = (mode = 'sidebar') => {
+    const isProjector = mode === 'projector' || mode === 'normal';
+    const levels = [
+      {
+        key: 'introduction',
+        name: 'Intro',
+        color: '#64748b',
+        border: '#94a3b8',
+        bg: 'rgba(100, 116, 139, 0.12)',
+        projBg: 'rgba(100, 116, 139, 0.35)',
+        projBorder: 'rgba(148, 163, 184, 0.6)',
+      },
+      {
+        key: 'beginner',
+        name: 'Beginner',
+        color: '#059669',
+        border: '#10b981',
+        bg: 'rgba(16, 185, 129, 0.12)',
+        projBg: 'rgba(16, 185, 129, 0.35)',
+        projBorder: 'rgba(16, 185, 129, 0.6)',
+      },
+      {
+        key: 'intermediate',
+        name: 'Intermediate',
+        color: '#4f46e5',
+        border: '#6366f1',
+        bg: 'rgba(79, 70, 229, 0.12)',
+        projBg: 'rgba(79, 70, 229, 0.35)',
+        projBorder: 'rgba(99, 102, 241, 0.6)',
+      },
+      {
+        key: 'advanced',
+        name: 'Advanced',
+        color: '#d97706',
+        border: '#f59e0b',
+        bg: 'rgba(245, 158, 11, 0.14)',
+        projBg: 'rgba(245, 158, 11, 0.35)',
+        projBorder: 'rgba(245, 158, 11, 0.6)',
+      },
+    ];
+
+    if (!isProjector) {
+      // ── Sidebar Grid Mode: 2x2 grid that fits 100% inside card without overflowing ──
+      return (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, 1fr)',
+          gap: 6,
+          width: '100%',
+          boxSizing: 'border-box',
+        }}>
+          {levels.map((lvl) => {
+            const isSelected = activeDifficulty === lvl.key;
+            return (
+              <button
+                key={lvl.key}
+                type="button"
+                onClick={() => handleUpdateDifficulty(lvl.key)}
+                title={`Select ${lvl.name}`}
+                style={{
+                  background: isSelected ? lvl.bg : 'var(--clr-card, #ffffff)',
+                  border: isSelected ? `2px solid ${lvl.border}` : '1px solid var(--clr-border, #e2e8f0)',
+                  color: isSelected ? lvl.color : 'var(--clr-text-2, #475569)',
+                  borderRadius: 8,
+                  padding: '7px 8px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 4,
+                  transition: 'all 0.18s ease',
+                  boxShadow: isSelected ? `0 2px 6px ${lvl.color}25` : 'none',
+                  outline: 'none',
+                  width: '100%',
+                  boxSizing: 'border-box',
+                }}
+              >
+                <span style={{ fontSize: 12, fontWeight: isSelected ? 800 : 600 }}>
+                  {lvl.name}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      );
+    }
+
+    // ── Projector Floating Dock Mode: Horizontal Capsule without emojis ──
+    return (
+      <div style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        background: 'rgba(0, 0, 0, 0.45)',
+        border: '1px solid rgba(255, 255, 255, 0.15)',
+        borderRadius: 999,
+        padding: '3px 4px',
+        gap: 3,
+        boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)',
+      }}>
+        {levels.map((lvl) => {
+          const isSelected = activeDifficulty === lvl.key;
+          return (
+            <button
+              key={lvl.key}
+              type="button"
+              onClick={() => handleUpdateDifficulty(lvl.key)}
+              title={`Switch level to ${lvl.name}`}
+              style={{
+                background: isSelected ? lvl.projBg : 'transparent',
+                border: isSelected ? `1.5px solid ${lvl.projBorder}` : '1.5px solid transparent',
+                color: isSelected ? '#ffffff' : '#94a3b8',
+                borderRadius: 999,
+                padding: '5px 12px',
+                fontSize: 12,
+                fontWeight: isSelected ? 800 : 600,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                transition: 'all 0.18s ease',
+                whiteSpace: 'nowrap',
+                boxShadow: isSelected ? `0 2px 10px ${lvl.color}40` : 'none',
+              }}
+            >
+              <span>{lvl.name}</span>
+            </button>
+          );
+        })}
+      </div>
+    );
   };
 
   // ── Clean question text helper (strips welcome prompt from question body) ─
@@ -885,6 +1315,7 @@ export default function AdminDashboard() {
             <span className="badge badge-neutral" style={{ fontSize: 13, padding: '5px 12px', fontWeight: 600 }}>
               Round {currentRound} of {totalRounds}
             </span>
+            {difficultyBadge(activeDifficulty, true)}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -926,7 +1357,7 @@ export default function AdminDashboard() {
               )}
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', gap: 10 }}>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                   <span className="badge badge-primary" style={{ fontSize: 13, padding: '5px 12px', fontWeight: 700 }}>
                     Round {currentQuestion.roundNumber} of {totalRounds}
                   </span>
@@ -935,7 +1366,7 @@ export default function AdminDashboard() {
                       {currentQuestion.category}
                     </span>
                   )}
-                  {currentQuestion.difficulty && difficultyBadge(currentQuestion.difficulty)}
+                  {difficultyBadge(currentQuestion.difficulty || activeDifficulty, true)}
                 </div>
 
                 {roundActive && (
@@ -1006,10 +1437,10 @@ export default function AdminDashboard() {
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--clr-border)', paddingTop: 10 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--clr-text-h)' }}>
-                  ⏱ {currentQuestion.timeLimitSeconds || 20}s Round Time Limit · 🏅 {currentQuestion.difficulty === 'introduction' ? '0 Pts (Intro Practice Round)' : `${currentQuestion.points || 10} Points`}
+                  ⏱ {currentQuestion.timeLimitSeconds || 20}s Round Time Limit · {currentQuestion.difficulty === 'introduction' ? '0 Pts (Intro Practice Round)' : `${currentQuestion.points || 10} Points`}
                 </span>
                 <span className="badge badge-success" style={{ fontSize: 12, padding: '4px 10px', fontWeight: 700 }}>
-                  📩 {stats.totalSubmissions} Submissions Live ({stats.correctCount} Correct)
+                  {stats.totalSubmissions} Submissions Live ({stats.correctCount} Correct)
                 </span>
               </div>
             </div>
@@ -1026,42 +1457,6 @@ export default function AdminDashboard() {
                 onRefresh={getLeaderboard}
                 isProjector={true}
               />
-
-              {/* Rankings Table */}
-              <div className="table-container" style={{ flex: 1, overflowY: 'auto' }}>
-                <table className="modern-table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: 90 }}>Rank</th>
-                      <th>Participant Name</th>
-                      <th>Course / Department</th>
-                      <th>Total Score</th>
-                      <th>Accuracy</th>
-                      <th>Response Time</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activeLeaderboardData.map((item) => (
-                      <tr key={item.participantId}>
-                        <td>
-                          <span style={{ fontWeight: 800, fontSize: 15, color: item.rank <= 3 ? '#4f46e5' : 'inherit' }}>
-                            #{item.rank}
-                          </span>
-                        </td>
-                        <td><strong style={{ fontSize: 15 }}>{item.fullName}</strong></td>
-                        <td style={{ fontSize: 13 }}>{item.course}</td>
-                        <td>
-                          <span className="badge badge-success" style={{ fontSize: 13, padding: '4px 10px', fontWeight: 700 }}>
-                            {item.totalScore ?? item.pointsAwarded ?? 0} pts
-                          </span>
-                        </td>
-                        <td style={{ fontSize: 13 }}>{item.correctCount ?? (item.isCorrect ? 1 : 0)} correct</td>
-                        <td style={{ fontSize: 13 }}>{fmtMs(item.totalResponseTimeMs ?? item.responseTimeMs ?? 0)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
             </div>
           )}
         </div>
@@ -1075,6 +1470,12 @@ export default function AdminDashboard() {
             </span>
           </div>
 
+          {/* Difficulty Level Switcher Buttons in Projector Floating Dock */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingRight: 8, borderRight: '1px solid var(--clr-border)' }}>
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Level:</span>
+            {renderDifficultySwitcher('projector')}
+          </div>
+
           {(isLive || isPaused) && (
             <>
               <button
@@ -1085,7 +1486,7 @@ export default function AdminDashboard() {
                 disabled={roundActive || currentRound >= totalRounds}
               >
                 <Icons.Play size={14} />
-                <span>Publish Round {currentRound + 1} (20s)</span>
+                <span>Publish Q{currentRound + 1} (20s)</span>
               </button>
 
               {roundActive && (
@@ -1322,13 +1723,35 @@ export default function AdminDashboard() {
 
               {(isLive || isPaused) && (
                 <>
+                  {/* Difficulty Switcher in Control Tab Card */}
+                  <div style={{
+                    background: 'var(--clr-bg-subtle, #f8fafc)',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--clr-border)',
+                    padding: '12px',
+                    marginBottom: 12,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10,
+                    width: '100%',
+                    boxSizing: 'border-box',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--clr-text-h)' }}>
+                        Difficulty Level
+                      </span>
+                      {difficultyBadge(activeDifficulty, false)}
+                    </div>
+                    {renderDifficultySwitcher('sidebar')}
+                  </div>
+
                   <button
                     id="btn-next-question"
                     className="btn btn-primary btn-full"
                     onClick={nextQuestion}
                     disabled={roundActive || currentRound >= totalRounds}
                   >
-                    <Icons.Play size={16} /> Publish Round {currentRound + 1} (20s)
+                    <Icons.Play size={16} /> Publish Q{currentRound + 1} · {({ introduction: 'Intro', beginner: 'Beginner', intermediate: 'Intermediate', advanced: 'Advanced' }[activeDifficulty] || activeDifficulty)} · 20s
                   </button>
 
                   {roundActive && (
@@ -1457,7 +1880,7 @@ export default function AdminDashboard() {
                         </span>
                       )}
                       {/* Difficulty badge */}
-                      {currentQuestion.difficulty && difficultyBadge(currentQuestion.difficulty)}
+                      {difficultyBadge(currentQuestion.difficulty || activeDifficulty, false)}
                     </div>
                     {roundActive && (
                       <span className="badge badge-success" style={{ fontSize: 14, padding: '6px 12px', fontWeight: 700 }}>
@@ -1525,8 +1948,8 @@ export default function AdminDashboard() {
 
                   <div style={{ display: 'flex', gap: 18, fontSize: 15, fontWeight: 600, color: 'var(--clr-text)' }}>
                     <span>⏱ 20s Limit</span>
-                    <span>🏅 {currentQuestion.points || 10} Points</span>
-                    <span>📩 {stats.totalSubmissions} Submissions ({stats.correctCount} Correct)</span>
+                    <span>{currentQuestion.points || 10} Points</span>
+                    <span>{stats.totalSubmissions} Submissions ({stats.correctCount} Correct)</span>
                   </div>
                 </div>
               ) : (
@@ -1538,7 +1961,7 @@ export default function AdminDashboard() {
                     No Round Currently Live
                   </h3>
                   <p style={{ fontSize: 13, color: 'var(--clr-text)' }}>
-                    Click "Publish Round" from the control panel to broadcast the next question to all students.
+                    Click "Publish Q" from the control panel to broadcast the next question to all students.
                   </p>
                 </div>
               )}
@@ -1650,7 +2073,7 @@ export default function AdminDashboard() {
                 <table className="modern-table">
                   <thead>
                     <tr>
-                      <th style={{ width: 80 }}>Round</th>
+                      <th style={{ width: 80 }}>Q#</th>
                       <th style={{ width: 140 }}>Difficulty</th>
                       <th>Question</th>
                       <th>Options (A, B, C, D)</th>
@@ -1663,12 +2086,31 @@ export default function AdminDashboard() {
                     {questions.map((q) => (
                       <tr key={q._id}>
                         <td>
-                          <span className="badge badge-primary">Round {q.roundNumber}</span>
+                          <span className="badge badge-primary">Q{q.roundNumber}</span>
                         </td>
                         <td>
-                          {difficultyBadge(q.difficulty || 'beginner')}
+                          <select
+                            value={q.difficulty || 'beginner'}
+                            onChange={(e) => handleUpdateDifficulty(e.target.value, q._id, q.roundNumber)}
+                            style={{
+                              background: 'rgba(255,255,255,0.06)',
+                              border: '1px solid var(--clr-border)',
+                              color: 'var(--clr-text-h)',
+                              padding: '5px 8px',
+                              borderRadius: 8,
+                              fontSize: 12,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              outline: 'none',
+                            }}
+                          >
+                            <option value="introduction" style={{ background: '#1e293b', color: '#fff' }}>Introduction</option>
+                            <option value="beginner" style={{ background: '#1e293b', color: '#fff' }}>Beginner</option>
+                            <option value="intermediate" style={{ background: '#1e293b', color: '#fff' }}>Intermediate</option>
+                            <option value="advanced" style={{ background: '#1e293b', color: '#fff' }}>Advanced</option>
+                          </select>
                           {(q.difficulty === 'introduction') && (
-                            <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4, fontStyle: 'italic' }}>0 pts · No Scoring</div>
+                            <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4, fontStyle: 'italic' }}>0 pts · Practice Round</div>
                           )}
                         </td>
                         <td>

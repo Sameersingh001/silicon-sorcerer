@@ -9,6 +9,7 @@ const {
   closeActiveRound,
   pauseActiveRound,
   resumeActiveRound,
+  updateActiveRoundDifficulty,
   processAnswerSubmission,
   cacheParticipant,
 } = require('../utils/submissionEngine');
@@ -24,10 +25,32 @@ const clearRoundTimeout = () => {
   }
 };
 
-// Broadcast current game state to all clients
+// Safely swap round numbers between two questions without violating the { eventId, roundNumber } unique index
+const safeSwapQuestionRounds = async (qA, qB) => {
+  if (!qA || !qB || qA._id.toString() === qB._id.toString()) return;
+  const roundA = qA.roundNumber;
+  const roundB = qB.roundNumber;
+  if (roundA === roundB) return;
+
+  // Step 1: Temporarily assign qA a unique negative number so position roundA is completely vacated
+  const tempRound = -Math.floor(Date.now() % 10000000 + Math.random() * 10000 + 1);
+  await Question.updateOne({ _id: qA._id }, { $set: { roundNumber: tempRound } });
+
+  // Step 2: Now roundA is free, assign roundA to qB
+  await Question.updateOne({ _id: qB._id }, { $set: { roundNumber: roundA } });
+
+  // Step 3: Now roundB is free, assign roundB to qA
+  await Question.updateOne({ _id: qA._id }, { $set: { roundNumber: roundB } });
+
+  qA.roundNumber = roundB;
+  qB.roundNumber = roundA;
+};
+
+// Broadcast current game state to all clients with synchronized server timestamp
 const broadcastGameState = async (io, event) => {
   const questionCount = await Question.countDocuments({ eventId: event._id });
   const participantCount = await Participant.countDocuments({ eventId: event._id });
+  const serverTime = Date.now();
 
   io.emit('game:state', {
     status: event.status,
@@ -35,11 +58,15 @@ const broadcastGameState = async (io, event) => {
     totalRounds: event.totalRounds,
     questionCount,
     participantCount,
-    roundTimer: event.roundTimer,
+    roundTimer: {
+      ...(event.roundTimer?.toObject?.() || event.roundTimer),
+      serverTime,
+    },
+    serverTime,
   });
 };
 
-// Auto-close round when timer expires
+// Auto-close round when timer expires (with 400ms network jitter buffer)
 const scheduleRoundTimeout = (io, event, remainingMs) => {
   clearRoundTimeout();
 
@@ -78,21 +105,24 @@ const broadcastRoundLeaderboard = async (io, event, question) => {
     questionId: question._id,
   }).lean();
 
-  const participantIds = submissions.map((s) => s.participantId);
-  const participants = await Participant.find({ participantId: { $in: participantIds } });
-  const participantMap = {};
-  participants.forEach((p) => { participantMap[p.participantId] = p; });
+  const submissionMap = {};
+  submissions.forEach((s) => { submissionMap[s.participantId] = s; });
 
-  const roundLeaderboard = submissions
-    .map((s) => ({
-      participantId: s.participantId,
-      fullName: participantMap[s.participantId]?.fullName || 'Unknown',
-      course: participantMap[s.participantId]?.course || '',
-      isCorrect: s.isCorrect,
-      pointsAwarded: s.pointsAwarded,
-      responseTimeMs: s.responseTimeMs,
-      submittedAnswer: s.submittedAnswer,
-    }))
+  const allParticipants = await Participant.find({ eventId: event._id }).lean();
+
+  const roundLeaderboard = allParticipants
+    .map((p) => {
+      const s = submissionMap[p.participantId];
+      return {
+        participantId: p.participantId,
+        fullName: p.fullName || 'Unknown',
+        course: p.course || '',
+        isCorrect: s ? Boolean(s.isCorrect) : false,
+        pointsAwarded: s ? (s.pointsAwarded ?? 0) : 0,
+        responseTimeMs: s ? s.responseTimeMs : (question?.timeLimitSeconds || 20) * 1000,
+        submittedAnswer: s ? s.submittedAnswer : 'No submission',
+      };
+    })
     .sort((a, b) => {
       if (b.pointsAwarded !== a.pointsAwarded) return b.pointsAwarded - a.pointsAwarded;
       return a.responseTimeMs - b.responseTimeMs;
@@ -286,7 +316,7 @@ const initSocketHandlers = (io) => {
     });
 
     // ─── Admin: Publish Next Question ───────────────────────────────────────
-    socket.on('admin:next_question', async () => {
+    socket.on('admin:next_question', async (data) => {
       if (!socket.isAdmin) return socket.emit('error', { message: 'Unauthorized' });
       try {
         const event = await getOrCreateEvent();
@@ -303,7 +333,27 @@ const initSocketHandlers = (io) => {
           return socket.emit('error', { message: 'No more questions. End the game.' });
         }
 
-        const question = await Question.findOne({ eventId: event._id, roundNumber: nextRound });
+        let question = await Question.findOne({ eventId: event._id, roundNumber: nextRound });
+
+        // If admin requested a specific difficulty for the next question:
+        const reqDifficulty = data?.difficulty;
+        if (reqDifficulty && question && question.difficulty !== reqDifficulty) {
+          const targetQ = await Question.findOne({
+            eventId: event._id,
+            difficulty: reqDifficulty,
+            roundNumber: { $gt: event.currentRoundNumber },
+          }).sort({ roundNumber: 1 });
+
+          if (targetQ && targetQ._id.toString() !== question._id.toString()) {
+            await safeSwapQuestionRounds(question, targetQ);
+            question = targetQ;
+          } else {
+            question.difficulty = reqDifficulty;
+            question.points = reqDifficulty === 'introduction' ? 0 : (reqDifficulty === 'intermediate' ? 15 : (reqDifficulty === 'advanced' ? 20 : 10));
+            await question.save();
+          }
+        }
+
         if (!question) {
           return socket.emit('error', { message: `Question for round ${nextRound} not found` });
         }
@@ -472,6 +522,201 @@ const initSocketHandlers = (io) => {
       } catch (err) {
         console.error('reveal_answer error:', err);
         socket.emit('error', { message: 'Failed to reveal answer' });
+      }
+    });
+
+    // ─── Admin: Change Question Difficulty (Supports Instant Real-Time Switch) ─
+    socket.on('admin:change_question_difficulty', async ({ questionId, roundNumber, difficulty }) => {
+      if (!socket.isAdmin) return socket.emit('error', { message: 'Unauthorized' });
+      try {
+        const valid = ['introduction', 'beginner', 'intermediate', 'advanced'];
+        if (!valid.includes(difficulty)) {
+          return socket.emit('error', { message: 'Invalid difficulty' });
+        }
+
+        const event = await getOrCreateEvent();
+        const defaultPoints = difficulty === 'introduction' ? 0 : (difficulty === 'intermediate' ? 15 : (difficulty === 'advanced' ? 20 : 10));
+
+        // ── CASE 1: Game is LIVE and round is ACTIVE (Instant Real-time Switch) ──
+        if (event.status === 'live' && event.roundTimer?.roundStatus === 'active') {
+          clearRoundTimeout();
+
+          // 1. Search for an unplayed question in this event with the target difficulty
+          let targetQuestion = await Question.findOne({
+            eventId: event._id,
+            _id: { $ne: event.currentQuestionId },
+            difficulty,
+            roundNumber: { $gt: event.currentRoundNumber },
+          }).sort({ roundNumber: 1 });
+
+          // If none found ahead, search for any other question of this difficulty
+          if (!targetQuestion) {
+            targetQuestion = await Question.findOne({
+              eventId: event._id,
+              _id: { $ne: event.currentQuestionId },
+              difficulty,
+            });
+          }
+
+          // If still no question has this difficulty in the database:
+          // Pick the next available unplayed question and convert it to this difficulty!
+          if (!targetQuestion) {
+            targetQuestion = await Question.findOne({
+              eventId: event._id,
+              _id: { $ne: event.currentQuestionId },
+              roundNumber: { $gt: event.currentRoundNumber },
+            }).sort({ roundNumber: 1 });
+
+            if (!targetQuestion) {
+              targetQuestion = await Question.findOne({
+                eventId: event._id,
+                _id: { $ne: event.currentQuestionId },
+              });
+            }
+
+            if (targetQuestion) {
+              targetQuestion.difficulty = difficulty;
+              targetQuestion.points = defaultPoints;
+              await targetQuestion.save();
+            }
+          }
+
+          // If no other question exists in the event at all, adapt current question
+          if (!targetQuestion) {
+            targetQuestion = await Question.findById(event.currentQuestionId);
+            if (targetQuestion) {
+              targetQuestion.difficulty = difficulty;
+              targetQuestion.points = defaultPoints;
+              await targetQuestion.save();
+            }
+          }
+
+          if (!targetQuestion) {
+            return socket.emit('error', { message: 'No question available to switch to' });
+          }
+
+          // Swap round numbers safely so the current round keeps its sequence smoothly
+          const currentQ = await Question.findById(event.currentQuestionId);
+          if (currentQ && targetQuestion._id.toString() !== currentQ._id.toString()) {
+            await safeSwapQuestionRounds(currentQ, targetQuestion);
+            targetQuestion.difficulty = difficulty;
+            targetQuestion.points = targetQuestion.points || defaultPoints;
+            await targetQuestion.save();
+
+            // Clear any mid-round submissions for the replaced question so all students can answer the new question
+            await Submission.deleteMany({
+              eventId: event._id,
+              questionId: currentQ._id,
+              roundNumber: event.currentRoundNumber,
+            });
+          } else {
+            targetQuestion.difficulty = difficulty;
+            targetQuestion.points = defaultPoints;
+            await targetQuestion.save();
+          }
+
+          event.currentQuestionId = targetQuestion._id;
+
+          // Fresh timer started synchronously
+          const now = new Date();
+          const timeLimitSeconds = targetQuestion.timeLimitSeconds || 20;
+          const deadlineAt = new Date(now.getTime() + timeLimitSeconds * 1000);
+
+          event.roundTimer = {
+            questionId: targetQuestion._id,
+            roundNumber: event.currentRoundNumber,
+            startedAt: now,
+            deadlineAt,
+            timeLimitSeconds,
+            pausedAt: null,
+            remainingMs: null,
+            roundStatus: 'active',
+          };
+          await event.save();
+
+          setActiveRound(event, targetQuestion);
+          scheduleRoundTimeout(io, event, timeLimitSeconds * 1000);
+
+          const payload = {
+            roundNumber: event.currentRoundNumber,
+            totalRounds: event.totalRounds,
+            questionText: targetQuestion.questionText,
+            questionImage: targetQuestion.questionImage || '',
+            options: targetQuestion.options || [],
+            questionType: targetQuestion.questionType || 'mcq',
+            category: targetQuestion.category,
+            difficulty: targetQuestion.difficulty,
+            timeLimitSeconds,
+            deadlineAt,
+            serverTime: now.getTime(),
+            remainingMs: timeLimitSeconds * 1000,
+            switchedAtRuntime: true,
+          };
+
+          // Send instantly to all participants and admin screens
+          io.to('participants').emit('question:new', payload);
+          io.to('admins').emit('question:admin', {
+            ...payload,
+            points: targetQuestion.points,
+          });
+
+          io.emit('question:difficulty_updated', {
+            questionId: targetQuestion._id,
+            roundNumber: event.currentRoundNumber,
+            difficulty: targetQuestion.difficulty,
+            points: targetQuestion.points,
+            switchedAtRuntime: true,
+          });
+
+          await broadcastGameState(io, event);
+          return;
+        }
+
+        // ── CASE 2: Game is ready or idle between rounds ──────────────────────
+        const nextRound = event.currentRoundNumber + 1;
+        let question = null;
+        if (questionId) {
+          question = await Question.findById(questionId);
+        } else if (roundNumber) {
+          question = await Question.findOne({ eventId: event._id, roundNumber });
+        } else {
+          question = await Question.findOne({ eventId: event._id, roundNumber: nextRound });
+        }
+
+        if (question) {
+          let matchingQ = await Question.findOne({
+            eventId: event._id,
+            _id: { $ne: question._id },
+            difficulty,
+            roundNumber: { $gt: event.currentRoundNumber },
+          }).sort({ roundNumber: 1 });
+
+          if (matchingQ) {
+            await safeSwapQuestionRounds(question, matchingQ);
+            question = matchingQ;
+          } else {
+            question.difficulty = difficulty;
+            question.points = defaultPoints;
+            await question.save();
+          }
+        } else {
+          question = await Question.findOne({ eventId: event._id, difficulty });
+        }
+
+        if (question) {
+          io.emit('question:difficulty_updated', {
+            questionId: question._id,
+            roundNumber: question.roundNumber,
+            difficulty: question.difficulty,
+            points: question.points,
+            switchedAtRuntime: false,
+          });
+        }
+
+        await broadcastGameState(io, event);
+      } catch (err) {
+        console.error('change_question_difficulty error:', err);
+        socket.emit('error', { message: 'Failed to update difficulty' });
       }
     });
 

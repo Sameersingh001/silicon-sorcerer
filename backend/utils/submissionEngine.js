@@ -63,6 +63,13 @@ const resumeActiveRound = (newDeadlineAt) => {
   }
 };
 
+const updateActiveRoundDifficulty = (difficulty, points) => {
+  if (activeRoundState) {
+    activeRoundState.difficulty = difficulty;
+    activeRoundState.points = difficulty === 'introduction' ? 0 : (points ?? activeRoundState.points);
+  }
+};
+
 const resetEngine = () => {
   activeRoundState = {
     eventId: null,
@@ -197,9 +204,10 @@ const processAnswerSubmission = async ({ sessionToken, submittedAnswer, io }) =>
     return { success: false, message: 'Round is closed or paused', status: 400 };
   }
 
-  // Fast Deadline Check
+  // Fast Deadline Check with 600ms network transmission grace period
   const now = new Date();
-  if (activeRoundState.deadlineAt && now.getTime() > new Date(activeRoundState.deadlineAt).getTime()) {
+  const GRACE_PERIOD_MS = 600;
+  if (activeRoundState.deadlineAt && now.getTime() > (new Date(activeRoundState.deadlineAt).getTime() + GRACE_PERIOD_MS)) {
     return { success: false, message: 'Time is up! Submission rejected.', status: 400 };
   }
 
@@ -229,7 +237,16 @@ const processAnswerSubmission = async ({ sessionToken, submittedAnswer, io }) =>
     activeRoundState.acceptedAnswers
   );
 
-  const pointsAwarded = isCorrect ? activeRoundState.points : 0;
+  const basePoints = activeRoundState.points || 0;
+  let pointsAwarded = 0;
+  if (basePoints > 0) {
+    if (isCorrect) {
+      pointsAwarded = basePoints;
+    } else {
+      // Wrong answer: half points penalty deducted (-50%, score can go negative)
+      pointsAwarded = -(basePoints / 2);
+    }
+  }
   const submittedAt = now;
   const responseTimeMs = activeRoundState.startedAt
     ? Math.max(0, submittedAt.getTime() - new Date(activeRoundState.startedAt).getTime())
@@ -304,7 +321,9 @@ const processAnswerSubmission = async ({ sessionToken, submittedAnswer, io }) =>
     pointsAwarded,
     responseTimeMs,
     submittedAnswer: rawAnswer,
-    message: isCorrect ? 'Correct! Well done!' : 'Submitted! Your answer has been recorded.',
+    message: isCorrect
+      ? 'Correct! Well done!'
+      : (pointsAwarded < 0 ? `Incorrect answer! ${pointsAwarded} pts deducted.` : 'Submitted! Your answer has been recorded.'),
     status: 200,
   };
 };
@@ -314,6 +333,7 @@ module.exports = {
   closeActiveRound,
   pauseActiveRound,
   resumeActiveRound,
+  updateActiveRoundDifficulty,
   resetEngine,
   cacheParticipant,
   getParticipantByToken,

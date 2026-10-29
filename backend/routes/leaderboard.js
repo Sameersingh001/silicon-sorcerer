@@ -34,22 +34,29 @@ const buildLeaderboard = async (eventId, questionId = null) => {
   ];
 
   const results = await Submission.aggregate(pipeline);
+  const subMap = {};
+  results.forEach((r) => { subMap[r._id] = r; });
 
-  // Fetch participant details
-  const participantIds = results.map((r) => r._id);
-  const participants = await Participant.find({ participantId: { $in: participantIds } });
-  const participantMap = {};
-  participants.forEach((p) => { participantMap[p.participantId] = p; });
+  // Fetch all registered participants for the event
+  const allParticipants = await Participant.find({ eventId }).lean();
 
-  return results.map((r, idx) => ({
-    rank: idx + 1,
-    participantId: r._id,
-    fullName: participantMap[r._id]?.fullName || 'Unknown',
-    course: participantMap[r._id]?.course || '',
-    totalScore: r.totalScore,
-    correctCount: r.correctCount,
-    totalResponseTimeMs: r.totalResponseTimeMs,
-  }));
+  return allParticipants
+    .map((p) => {
+      const r = subMap[p.participantId];
+      return {
+        participantId: p.participantId,
+        fullName: p.fullName || 'Unknown',
+        course: p.course || '',
+        totalScore: r ? r.totalScore : 0,
+        correctCount: r ? r.correctCount : 0,
+        totalResponseTimeMs: r ? r.totalResponseTimeMs : 0,
+      };
+    })
+    .sort((a, b) => {
+      if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+      return a.totalResponseTimeMs - b.totalResponseTimeMs;
+    })
+    .map((item, idx) => ({ ...item, rank: idx + 1 }));
 };
 
 // GET /api/leaderboard/final - Full game leaderboard

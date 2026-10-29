@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
-import { API_BASE, getParticipantSession, clearParticipantSession, apiFetch, fmtMs, parseOptionContent } from '../utils';
+import { API_BASE, getParticipantSession, clearParticipantSession, apiFetch, fmtMs, parseOptionContent, isImageUrl } from '../utils';
 import { useToast, useCountdown } from '../hooks';
 import { Toast, Spinner, TimerCircle, IPhoneFullscreenHelper, IPhoneBannerPrompt } from '../components';
 import { Icons } from '../Icons';
@@ -13,6 +13,105 @@ const PHASE = {
   ROUND_RESULT: 'result',  // round closed, showing feedback & leaderboard
   COMPLETED: 'completed',  // quiz over
   PAUSED: 'paused',
+};
+
+// Helper to render an answer (submitted answer or correct answer) cleanly without raw image URLs
+const renderAnswerDisplay = (answer, question) => {
+  if (!answer) return null;
+
+  const ansStr = String(answer).trim();
+  const letters = ['A', 'B', 'C', 'D'];
+
+  // Check if answer matches one of the question's options
+  let matchedIdx = -1;
+  let matchedOpt = null;
+
+  if (question && Array.isArray(question.options)) {
+    matchedIdx = question.options.findIndex((opt, idx) => {
+      if (opt === answer) return true;
+      if (letters[idx] && letters[idx].toLowerCase() === ansStr.toLowerCase()) return true;
+      const parsed = parseOptionContent(opt);
+      if (parsed.image && (parsed.image === ansStr || ansStr.includes(parsed.image))) return true;
+      if (parsed.text && parsed.text.toLowerCase() === ansStr.toLowerCase()) return true;
+      return false;
+    });
+
+    if (matchedIdx !== -1) {
+      matchedOpt = question.options[matchedIdx];
+    }
+  }
+
+  const parsed = parseOptionContent(matchedOpt || ansStr);
+  const letter = matchedIdx !== -1 ? letters[matchedIdx] : null;
+
+  // Case 1: Image option or Image URL -> Show clean Option badge + Image thumbnail (NEVER show raw URL)
+  if (parsed.hasImage || isImageUrl(ansStr) || /^https?:\/\//i.test(ansStr)) {
+    const imgSrc = parsed.image || ansStr;
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+        {letter && (
+          <span style={{
+            fontSize: 12.5,
+            fontWeight: 800,
+            background: 'rgba(99, 102, 241, 0.25)',
+            border: '1px solid rgba(129, 140, 248, 0.4)',
+            color: '#c7d2fe',
+            padding: '3px 9px',
+            borderRadius: 6,
+            flexShrink: 0,
+          }}>
+            Option {letter}
+          </span>
+        )}
+        <div style={{
+          width: 52,
+          height: 52,
+          borderRadius: 8,
+          overflow: 'hidden',
+          background: 'rgba(255, 255, 255, 0.08)',
+          border: '1px solid rgba(255, 255, 255, 0.15)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}>
+          <img
+            src={imgSrc}
+            alt={letter ? `Option ${letter}` : 'Selected Image'}
+            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+          />
+        </div>
+        {parsed.text && (
+          <span style={{ color: '#f8fafc', fontSize: 13.5, fontWeight: 700 }}>
+            {parsed.text}
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  // Case 2: Clean text option
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3 }}>
+      {letter && (
+        <span style={{
+          fontSize: 12,
+          fontWeight: 800,
+          background: 'rgba(99, 102, 241, 0.25)',
+          border: '1px solid rgba(129, 140, 248, 0.4)',
+          color: '#c7d2fe',
+          padding: '2px 8px',
+          borderRadius: 6,
+          flexShrink: 0,
+        }}>
+          Option {letter}
+        </span>
+      )}
+      <span style={{ color: '#f8fafc', fontSize: 14, fontWeight: 700, wordBreak: 'break-word' }}>
+        {parsed.text || ansStr}
+      </span>
+    </div>
+  );
 };
 
 export default function GamePage() {
@@ -129,8 +228,9 @@ export default function GamePage() {
     if (!session?.sessionToken) return;
 
     const socket = io(API_BASE, {
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
+      transports: ['websocket', 'polling'],
+      reconnectionAttempts: 15,
+      reconnectionDelay: 500,
     });
     socketRef.current = socket;
 
@@ -145,6 +245,17 @@ export default function GamePage() {
       setGameState(state);
       if (state.status === 'paused') setPhase(PHASE.PAUSED);
       else if (state.status === 'completed') setPhase(PHASE.COMPLETED);
+    });
+
+    socket.on('game:paused', () => {
+      setPhase(PHASE.PAUSED);
+      showToast('Game paused by host', 'warning');
+    });
+
+    socket.on('game:resumed', ({ deadlineAt, serverTime } = {}) => {
+      setQuestion((prev) => prev ? { ...prev, deadlineAt, serverTime } : prev);
+      setPhase(PHASE.QUESTION);
+      showToast('Game resumed!', 'info');
     });
 
     socket.on('game:started', () => {
@@ -162,16 +273,31 @@ export default function GamePage() {
 
       // Smoothly reset arena scroll without jumping window offset on Android
       arenaRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' });
+
+      if (q.switchedAtRuntime) {
+        showToast(`⚡ Host switched to ${q.difficulty?.toUpperCase()} question!`, 'warning');
+      }
     });
 
     socket.on('round:closed', () => {
       setPhase((prev) => (prev === PHASE.QUESTION || prev === PHASE.SUBMITTED ? PHASE.ROUND_RESULT : prev));
-      showToast('Time is up! Round closed.', 'warning');
+      showToast('Time is up! Q closed.', 'warning');
     });
 
     socket.on('question:answer_reveal', ({ roundNumber, correctAnswer, difficulty }) => {
       setLastResult((prev) => prev ? { ...prev, revealed: true, correctAnswer } : { revealed: true, correctAnswer, isCorrect: false });
       showToast('Host revealed the correct answer!', 'info');
+    });
+
+    socket.on('question:difficulty_updated', ({ roundNumber, difficulty, points }) => {
+      setQuestion((prev) => {
+        if (!prev) return prev;
+        if (prev.roundNumber === roundNumber) {
+          return { ...prev, difficulty, points };
+        }
+        return prev;
+      });
+      showToast(`Difficulty level updated: ${difficulty.toUpperCase()}`, 'info');
     });
 
     socket.on('leaderboard:round', ({ roundNumber, leaderboard }) => {
@@ -236,7 +362,7 @@ export default function GamePage() {
       if (data && data.success) {
         setLastResult({
           isCorrect: !!data.isCorrect,
-          pointsAwarded: data.pointsAwarded || 0,
+          pointsAwarded: data.pointsAwarded ?? 0,
           responseTimeMs: data.responseTimeMs || 0,
           submittedAnswer: String(finalAnswer).trim(),
           message: data.message,
@@ -287,7 +413,7 @@ export default function GamePage() {
   };
 
   const handleSelectOption = (opt) => {
-    if (submitting) return;
+    if (submitting || remaining <= 0) return;
     setSelectedOption(opt);
     submitAnswer(opt);
   };
@@ -379,23 +505,24 @@ export default function GamePage() {
         <div className="arena-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span className="badge badge-primary" style={{ fontSize: 12, padding: '5px 10px', background: 'rgba(79, 70, 229, 0.3)', border: '1px solid rgba(99, 102, 241, 0.4)' }}>
-              Round {question.roundNumber} of {question.totalRounds}
+              Q{question.roundNumber} of {question.totalRounds}
             </span>
             {question.category && (
               <span className="badge badge-purple" style={{ fontSize: 11.5, padding: '5px 10px' }}>
                 {question.category}
               </span>
             )}
-            {question.difficulty && (() => {
+            {(() => {
+              const diff = question.difficulty || 'beginner';
               const map = {
-                introduction: { bg: 'rgba(107,114,128,0.3)', border: 'rgba(107,114,128,0.4)', text: '#d1d5db', label: '📖 Intro' },
-                beginner:     { bg: 'rgba(16,185,129,0.2)',  border: 'rgba(16,185,129,0.4)',  text: '#6ee7b7', label: '🟢 Beginner' },
-                intermediate: { bg: 'rgba(79,70,229,0.25)',  border: 'rgba(99,102,241,0.4)',  text: '#a5b4fc', label: '🔵 Intermediate' },
-                advanced:     { bg: 'rgba(245,158,11,0.25)', border: 'rgba(245,158,11,0.4)',  text: '#fcd34d', label: '🔥 Advanced' },
+                introduction: { bg: 'rgba(107,114,128,0.3)', border: 'rgba(107,114,128,0.5)', text: '#e5e7eb', label: '📖 Introduction' },
+                beginner:     { bg: 'rgba(16,185,129,0.25)', border: 'rgba(16,185,129,0.5)', text: '#6ee7b7', label: '🟢 Beginner' },
+                intermediate: { bg: 'rgba(79,70,229,0.25)',  border: 'rgba(99,102,241,0.5)', text: '#a5b4fc', label: '🔵 Intermediate' },
+                advanced:     { bg: 'rgba(245,158,11,0.25)', border: 'rgba(245,158,11,0.5)', text: '#fcd34d', label: '🔥 Advanced' },
               };
-              const d = map[question.difficulty] || map['beginner'];
+              const d = map[diff] || map['beginner'];
               return (
-                <span style={{ fontSize: 11.5, padding: '5px 10px', borderRadius: 999, fontWeight: 700, background: d.bg, border: `1px solid ${d.border}`, color: d.text }}>
+                <span style={{ fontSize: 12, padding: '5px 12px', borderRadius: 999, fontWeight: 800, background: d.bg, border: `1px solid ${d.border}`, color: d.text, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                   {d.label}
                 </span>
               );
@@ -479,6 +606,25 @@ export default function GamePage() {
                   </div>
                 </div>
               )}
+              {question.difficulty !== 'introduction' && (
+                <div style={{ marginBottom: 12 }}>
+                  <span style={{
+                    fontSize: 12.5,
+                    fontWeight: 800,
+                    padding: '4px 14px',
+                    borderRadius: 999,
+                    background: (question.difficulty === 'advanced') ? 'rgba(245,158,11,0.2)' : (question.difficulty === 'intermediate') ? 'rgba(79,70,229,0.2)' : 'rgba(16,185,129,0.2)',
+                    border: `1.5px solid ${(question.difficulty === 'advanced') ? 'rgba(245,158,11,0.5)' : (question.difficulty === 'intermediate') ? 'rgba(99,102,241,0.5)' : 'rgba(16,185,129,0.5)'}`,
+                    color: (question.difficulty === 'advanced') ? '#fbbf24' : (question.difficulty === 'intermediate') ? '#a5b4fc' : '#6ee7b7',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    letterSpacing: '0.02em',
+                  }}>
+                    {question.difficulty === 'advanced' ? 'Advanced' : question.difficulty === 'intermediate' ? 'Intermediate' : 'Beginner'} · {question.points || 10} pts
+                  </span>
+                </div>
+              )}
               <h2 className="question-heading">
                 {cleanQuestionText(question.questionText)}
               </h2>
@@ -511,7 +657,7 @@ export default function GamePage() {
                         type="button"
                         className={`image-option-btn opt-${idx % 4}${isSelected ? ' selected' : ''}${submitting && isSelected ? ' submitting' : ''}`}
                         onClick={() => handleSelectOption(opt)}
-                        disabled={submitting}
+                        disabled={submitting || remaining <= 0}
                       >
                         <span className="image-letter-badge">{letter}</span>
                         {isSelected && (
@@ -542,7 +688,7 @@ export default function GamePage() {
                         type="button"
                         className={`option-btn opt-${idx % 4}${isSelected ? ' selected' : ''}${submitting && isSelected ? ' submitting' : ''}`}
                         onClick={() => handleSelectOption(opt)}
-                        disabled={submitting}
+                        disabled={submitting || remaining <= 0}
                       >
                         <span className="option-letter">{letter}</span>
                         <span style={{ flex: 1, wordBreak: 'break-word' }}>{opt}</span>
@@ -665,7 +811,7 @@ export default function GamePage() {
               : '#ffffff',
           }}>
             {lastResult?.revealed
-              ? (isCorrect ? '🎉 Correct Answer!' : 'Recorded! Round Over')
+              ? (isCorrect ? '🎉 Correct Answer!' : 'Recorded! Q Closed')
               : 'Answer Locked & Submitted!'}
           </h2>
 
@@ -682,9 +828,21 @@ export default function GamePage() {
                 ? (question?.difficulty === 'introduction'
                     ? 'Practice Round (0 pts) · Well done!'
                     : `+${lastResult.pointsAwarded} points awarded in ${fmtMs(lastResult.responseTimeMs)}!`)
-                : (lastResult?.correctAnswer
-                    ? `Official answer: ${lastResult.correctAnswer}`
-                    : 'No points awarded for this round.')
+                : (
+                    <span>
+                      {lastResult?.pointsAwarded < 0 && (
+                        <strong style={{ color: '#f87171', display: 'block', marginBottom: 4, fontSize: 14 }}>
+                          Wrong answer: {lastResult.pointsAwarded} pts deducted!
+                        </strong>
+                      )}
+                      {lastResult?.correctAnswer ? (
+                        <span style={{ display: 'block', marginTop: 6 }}>
+                          <span style={{ fontSize: 12, color: '#fca5a5', display: 'block', marginBottom: 2 }}>Official Answer:</span>
+                          {renderAnswerDisplay(lastResult.correctAnswer, question)}
+                        </span>
+                      ) : 'No points awarded for this round.'}
+                    </span>
+                  )
             ) : (
               `Recorded in ${fmtMs(lastResult?.responseTimeMs || 0)}. Waiting for the host to reveal results...`
             )}
@@ -701,12 +859,10 @@ export default function GamePage() {
               textAlign: 'left',
               fontSize: 13,
             }}>
-              <span style={{ color: '#94a3b8', fontSize: 11.5, display: 'block', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <span style={{ color: '#94a3b8', fontSize: 11.5, display: 'block', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Your Locked Submission:
               </span>
-              <strong style={{ color: '#f8fafc', fontSize: 14, wordBreak: 'break-word', display: 'block' }}>
-                {lastResult.submittedAnswer}
-              </strong>
+              {renderAnswerDisplay(lastResult.submittedAnswer, question)}
             </div>
           )}
 
@@ -777,22 +933,52 @@ export default function GamePage() {
             }}>
               {lastResult?.revealed
                 ? (lastResult?.isCorrect ? '🎉 Correct Answer!' : 'Incorrect or Missed')
-                : 'Round Closed'}
+                : 'Q Closed'}
             </h2>
-            <p style={{ fontSize: 13.5, color: '#94a3b8' }}>
+            <div style={{ fontSize: 13.5, color: '#94a3b8' }}>
               {lastResult?.revealed ? (
                 lastResult?.isCorrect
                   ? (question?.difficulty === 'introduction'
                       ? 'Practice Round (0 pts) · Well done!'
                       : `+${lastResult.pointsAwarded} points awarded in ${fmtMs(lastResult.responseTimeMs)}!`)
-                  : (lastResult?.correctAnswer
-                      ? `Official answer: ${lastResult.correctAnswer}`
-                      : 'No points awarded for this round.')
+                  : (
+                      <span>
+                        {lastResult?.pointsAwarded < 0 && (
+                          <strong style={{ color: '#f87171', display: 'block', marginBottom: 4, fontSize: 14 }}>
+                            Wrong answer: {lastResult.pointsAwarded} pts deducted!
+                          </strong>
+                        )}
+                        {lastResult?.correctAnswer ? (
+                          <span style={{ display: 'block', marginTop: 6 }}>
+                            <span style={{ fontSize: 12, color: '#fca5a5', display: 'block', marginBottom: 2 }}>Official Answer:</span>
+                            {renderAnswerDisplay(lastResult.correctAnswer, question)}
+                          </span>
+                        ) : 'No points awarded for this round.'}
+                      </span>
+                    )
               ) : (
                 'Host will reveal the correct answer on screen shortly...'
               )}
-            </p>
+            </div>
           </div>
+
+          {/* Submitted Answer Recap Chip */}
+          {lastResult?.submittedAnswer && (
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: 14,
+              padding: '12px 16px',
+              marginBottom: 16,
+              textAlign: 'left',
+              fontSize: 13,
+            }}>
+              <span style={{ color: '#94a3b8', fontSize: 11.5, display: 'block', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Your Locked Submission:
+              </span>
+              {renderAnswerDisplay(lastResult.submittedAnswer, question)}
+            </div>
+          )}
 
           {/* Projector Callout Card */}
           <div style={{
@@ -810,12 +996,12 @@ export default function GamePage() {
               Live Standings on Main Stage Screen!
             </h3>
             <p style={{ fontSize: 12.5, color: '#cbd5e1', lineHeight: 1.5 }}>
-              Look up at the auditorium projector to see fastest fingers, round winners, and current rankings.
+              Look up at the auditorium projector to see fastest fingers, question winners, and current rankings.
             </p>
           </div>
 
           <p style={{ textAlign: 'center', fontSize: 12.5, color: '#64748b', marginTop: 12 }}>
-            Keep this screen open. Next round will appear automatically.
+            Keep this screen open. Next question will appear automatically.
           </p>
         </div>
       </div>
@@ -861,7 +1047,7 @@ export default function GamePage() {
             ? 'Thank you for competing in the Silicon Sorcerer QR Quest. Standings are finalized!'
             : phase === PHASE.PAUSED
             ? 'The proctor has temporarily paused the quiz. Stand by.'
-            : `Welcome, ${session?.fullName}! Keep this screen open. When Round 1 begins, the question and options will appear automatically.`}
+            : `Welcome, ${session?.fullName}! Keep this screen open. When Q1 begins, the question and options will appear automatically.`}
         </p>
 
         <div style={{

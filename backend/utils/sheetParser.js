@@ -62,12 +62,40 @@ const parseQuestionSheet = (buffer, mimetype) => {
     const acceptedRaw = String(row.accepted_answers || '').trim();
     // Difficulty: introduction | beginner | intermediate | advanced
     const VALID_DIFFICULTIES = ['introduction', 'beginner', 'intermediate', 'advanced'];
-    const rawDifficulty = String(row.difficulty || row.level || 'beginner').trim().toLowerCase();
-    const difficulty = VALID_DIFFICULTIES.includes(rawDifficulty) ? rawDifficulty : 'beginner';
+    const userDiff = String(row.difficulty || row.level || '').trim().toLowerCase();
+    let difficulty = 'beginner';
 
-    // Introduction level always gets 0 points (no scoring)
+    if (VALID_DIFFICULTIES.includes(userDiff)) {
+      difficulty = userDiff;
+    } else {
+      // Smart infer: points or position
+      const p = parseInt(row.points);
+      const cat = String(row.category || '').toLowerCase();
+      const qText = String(row.question || '').toLowerCase();
+
+      if (p === 0 || /intro/i.test(cat) || /intro|welcome/i.test(qText)) {
+        difficulty = 'introduction';
+      } else if (p >= 20 || /advanced|hard/i.test(cat)) {
+        difficulty = 'advanced';
+      } else if (p === 15 || /intermediate|medium/i.test(cat)) {
+        difficulty = 'intermediate';
+      } else if (roundNumber >= 8) {
+        difficulty = 'advanced';
+      } else if (roundNumber >= 5) {
+        difficulty = 'intermediate';
+      } else if (roundNumber === 1 && p === 0) {
+        difficulty = 'introduction';
+      } else {
+        difficulty = 'beginner';
+      }
+    }
+
+    // Points logic aligned with difficulty tiers
     const rawPoints = parseInt(row.points);
-    const points = difficulty === 'introduction' ? 0 : (isNaN(rawPoints) ? 10 : rawPoints);
+    let points = isNaN(rawPoints)
+      ? (difficulty === 'introduction' ? 0 : difficulty === 'intermediate' ? 15 : difficulty === 'advanced' ? 20 : 10)
+      : rawPoints;
+    if (difficulty === 'introduction') points = 0;
     const timeLimitSeconds = parseInt(row.time_limit_seconds) || 20;
     const category = String(row.category || 'General').trim();
 

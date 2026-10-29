@@ -40,13 +40,16 @@ const corsOptions = {
   optionsSuccessStatus: 200,
 };
 
-// Socket.IO with all-origins allowed
+// Socket.IO with all-origins allowed and low-latency transport tuning
 const io = new Server(server, {
   cors: {
     origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     credentials: true,
   },
+  transports: ['websocket', 'polling'],
+  pingInterval: 10000,
+  pingTimeout: 5000,
   allowEIO3: true,
 });
 
