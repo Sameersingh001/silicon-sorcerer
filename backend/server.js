@@ -131,6 +131,10 @@ app.get('/', (req, res) => {
   });
 });
 
+// Serve frontend public & static assets (e.g., /kbc-hooter.wav) directly through backend
+app.use(express.static(path.join(__dirname, '../frontend/public')));
+app.use(express.static(path.join(__dirname, '../frontend/dist')));
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/events', eventRoutes);

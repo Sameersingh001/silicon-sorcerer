@@ -81,6 +81,7 @@ const scheduleRoundTimeout = (io, event, remainingMs) => {
 
       const question = await Question.findById(freshEvent.currentQuestionId);
 
+      console.log(`⏱️ [ROUND TIMEOUT] Question time is up for Round ${freshEvent.currentRoundNumber}! Broadcasting 'round:closed'...`);
       io.emit('round:closed', {
         roundNumber: freshEvent.currentRoundNumber,
         message: 'Time is up! Round closed.',
