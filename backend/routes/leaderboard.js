@@ -124,25 +124,44 @@ router.get('/export', authMiddleware, async (req, res) => {
 
     const csvData = leaderboard.map((item) => ({
       Rank: item.rank,
+      'Participant ID': item.participantId,
       'Participant Name': item.fullName,
       Course: item.course,
       'Total Score': item.totalScore,
       'Correct Answers': item.correctCount,
+      'Total Response Time (s)': (item.totalResponseTimeMs / 1000).toFixed(2),
       'Total Response Time (ms)': item.totalResponseTimeMs,
     }));
 
-    const fields = ['Rank', 'Participant Name', 'Course', 'Total Score', 'Correct Answers', 'Total Response Time (ms)'];
+    const fields = [
+      'Rank',
+      'Participant ID',
+      'Participant Name',
+      'Course',
+      'Total Score',
+      'Correct Answers',
+      'Total Response Time (s)',
+      'Total Response Time (ms)',
+    ];
+
     const csvRows = [fields.join(',')];
     csvData.forEach((row) => {
-      csvRows.push(fields.map((f) => `"${row[f]}"`).join(','));
+      csvRows.push(
+        fields
+          .map((f) => `"${String(row[f] ?? '').replace(/"/g, '""')}"`)
+          .join(',')
+      );
     });
-    const csv = csvRows.join('\n');
 
-    res.setHeader('Content-Disposition', 'attachment; filename=silicon-sorcerer-results.csv');
-    res.setHeader('Content-Type', 'text/csv');
+    // \uFEFF is UTF-8 Byte Order Mark (BOM) so Excel opens UTF-8 text cleanly
+    const csv = '\uFEFF' + csvRows.join('\r\n');
+
+    const filename = `silicon-sorcerer-results-${new Date().toISOString().slice(0, 10)}.csv`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.send(csv);
   } catch (error) {
-    console.error(error);
+    console.error('Export error:', error);
     res.status(500).json({ success: false, message: 'Export failed' });
   }
 });

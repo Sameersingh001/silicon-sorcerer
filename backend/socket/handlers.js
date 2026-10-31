@@ -285,6 +285,12 @@ const initSocketHandlers = (io) => {
 
         const event = await getOrCreateEvent();
         await broadcastGameState(io, event);
+
+        // If the event is already completed, send final leaderboard directly to admin socket
+        if (event.status === 'completed') {
+          const finalLeaderboard = await buildLeaderboard(event._id);
+          socket.emit('leaderboard:final', { leaderboard: finalLeaderboard });
+        }
       } catch {
         socket.emit('error', { message: 'Invalid admin token' });
       }
@@ -752,7 +758,7 @@ const initSocketHandlers = (io) => {
         io.emit('game:completed', {
           message: 'Quiz completed! Thank you for participating in Silicon Sorcerer!',
         });
-        io.to('admins').emit('leaderboard:final', { leaderboard: finalLeaderboard });
+        io.emit('leaderboard:final', { leaderboard: finalLeaderboard });
 
         await broadcastGameState(io, event);
       } catch (err) {

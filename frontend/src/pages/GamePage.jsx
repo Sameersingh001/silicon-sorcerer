@@ -229,8 +229,11 @@ export default function GamePage() {
 
     const socket = io(API_BASE, {
       transports: ['websocket', 'polling'],
-      reconnectionAttempts: 15,
-      reconnectionDelay: 500,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
     });
     socketRef.current = socket;
 

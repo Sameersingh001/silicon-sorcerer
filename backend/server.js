@@ -20,6 +20,15 @@ const { initSocketHandlers } = require('./socket/handlers');
 const app = express();
 const server = http.createServer(app);
 
+// Process safety: prevent unhandled exceptions or rejected promises from killing the server
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('⚠️ Unhandled Promise Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('⚠️ Uncaught Exception:', err);
+});
+
 // Permissive CORS configuration — allows ALL origins, methods, and common headers
 const corsOptions = {
   origin: (origin, callback) => {
@@ -40,7 +49,7 @@ const corsOptions = {
   optionsSuccessStatus: 200,
 };
 
-// Socket.IO with all-origins allowed and low-latency transport tuning
+// Socket.IO with all-origins allowed and stable connection heartbeat tuning
 const io = new Server(server, {
   cors: {
     origin: '*',
@@ -48,8 +57,9 @@ const io = new Server(server, {
     credentials: true,
   },
   transports: ['websocket', 'polling'],
-  pingInterval: 10000,
-  pingTimeout: 5000,
+  pingInterval: 25000,
+  pingTimeout: 60000,
+  connectTimeout: 45000,
   allowEIO3: true,
 });
 

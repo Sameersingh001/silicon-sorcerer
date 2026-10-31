@@ -418,6 +418,7 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState({ totalSubmissions: 0, correctCount: 0, participantCount: 0 });
   const [roundLeaderboard, setRoundLeaderboard] = useState([]);
   const [finalLeaderboard, setFinalLeaderboard] = useState([]);
+  const [exportingCsv, setExportingCsv] = useState(false);
 
   // Correct answer reveal on round timeout / close (hold 2 seconds before leaderboard)
   const [revealedAnswer, setRevealedAnswer] = useState(null);
@@ -481,6 +482,14 @@ export default function AdminDashboard() {
         if (evData.success) {
           setEvent(evData.event);
           setStats((prev) => ({ ...prev, participantCount: evData.event.participantCount || 0 }));
+          if (evData.event.status === 'completed') {
+            apiFetch('/api/leaderboard/final').then((lbRes) => {
+              if (lbRes.success && lbRes.leaderboard) {
+                setFinalLeaderboard(lbRes.leaderboard);
+                setProjectorViewMode('leaderboard');
+              }
+            });
+          }
         }
         if (qData.success) setQuestions(qData.questions || []);
         if (qrResp.success) setQrData(qrResp);
@@ -517,8 +526,11 @@ export default function AdminDashboard() {
 
     const socket = io(API_BASE, {
       transports: ['websocket', 'polling'],
-      reconnectionAttempts: 15,
-      reconnectionDelay: 500,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
     });
     socketRef.current = socket;
 
@@ -532,6 +544,26 @@ export default function AdminDashboard() {
     socket.on('game:state', (st) => {
       setGameState(st);
       setStats((prev) => ({ ...prev, participantCount: st.participantCount }));
+      if (st.status === 'completed') {
+        setShowingAnswerReveal(false);
+        setProjectorViewMode('leaderboard');
+        apiFetch('/api/leaderboard/final').then((lbRes) => {
+          if (lbRes.success && lbRes.leaderboard) {
+            setFinalLeaderboard(lbRes.leaderboard);
+          }
+        });
+      }
+    });
+
+    socket.on('game:completed', () => {
+      setShowingAnswerReveal(false);
+      setProjectorViewMode('leaderboard');
+      showToast('Quiz completed! Final leaderboard ready.', 'success');
+      apiFetch('/api/leaderboard/final').then((lbRes) => {
+        if (lbRes.success && lbRes.leaderboard) {
+          setFinalLeaderboard(lbRes.leaderboard);
+        }
+      });
     });
 
     socket.on('game:paused', () => {
@@ -622,7 +654,8 @@ export default function AdminDashboard() {
     });
 
     socket.on('leaderboard:final', ({ leaderboard }) => {
-      setFinalLeaderboard(leaderboard);
+      setFinalLeaderboard(leaderboard || []);
+      setShowingAnswerReveal(false);
       setProjectorViewMode('leaderboard');
       showToast('Final Leaderboard generated!', 'success');
     });
@@ -690,7 +723,51 @@ export default function AdminDashboard() {
   const pauseGame = () => emit('admin:pause');
   const resumeGame = () => emit('admin:resume');
   const closeRound = () => emit('admin:close_round');
-  const endGame = () => { if (confirm('End the game for all participants?')) emit('admin:end_game'); };
+  const endGame = () => {
+    if (!confirm('End the game for all participants?')) return;
+    setShowingAnswerReveal(false);
+    setProjectorViewMode('leaderboard');
+    emit('admin:end_game');
+    // Immediate fallback fetch for final leaderboard
+    setTimeout(async () => {
+      try {
+        const lbRes = await apiFetch('/api/leaderboard/final');
+        if (lbRes.success && lbRes.leaderboard) {
+          setFinalLeaderboard(lbRes.leaderboard);
+        }
+      } catch (e) {
+        console.warn('Fallback final leaderboard fetch:', e);
+      }
+    }, 400);
+  };
+
+  const handleExportCSV = async () => {
+    try {
+      setExportingCsv(true);
+      const token = getAdminToken();
+      const res = await fetch(`${API_BASE}/api/leaderboard/export${token ? `?token=${encodeURIComponent(token)}` : ''}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Export failed');
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `silicon-sorcerer-results-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      showToast('CSV Exported successfully!', 'success');
+    } catch (err) {
+      showToast(`Export failed: ${err.message}`, 'error');
+    } finally {
+      setExportingCsv(false);
+    }
+  };
   const getLeaderboard = () => emit('admin:get_leaderboard');
   const revealAnswer = () => emit('admin:reveal_answer');
 
@@ -759,7 +836,6 @@ export default function AdminDashboard() {
         setShowingAnswerReveal(false);
         setRoundLeaderboard([]);
         setFinalLeaderboard([]);
-        setActiveLeaderboardData([]);
         setQuestions([]);
         setParticipants([]);
         setStats({ totalSubmissions: 0, correctCount: 0, wrongCount: 0, avgTimeMs: 0 });
@@ -785,7 +861,6 @@ export default function AdminDashboard() {
         setShowingAnswerReveal(false);
         setRoundLeaderboard([]);
         setFinalLeaderboard([]);
-        setActiveLeaderboardData([]);
         setStats({ totalSubmissions: 0, correctCount: 0, wrongCount: 0, avgTimeMs: 0 });
         const cur = await apiFetch('/api/events/current');
         if (cur.success) setEvent(cur.event);
@@ -1299,7 +1374,7 @@ export default function AdminDashboard() {
   // FULLSCREEN PROJECTOR / ARENA VIEW ("Quiz Control Flow niche aa jaye")
   // ═════════════════════════════════════════════════════════════════
   if (isProjectorMode) {
-    const showQuestionView = (projectorViewMode === 'question' || (projectorViewMode === 'auto' && roundActive) || showingAnswerReveal) && currentQuestion;
+    const showQuestionView = !isCompleted && (projectorViewMode === 'question' || (projectorViewMode === 'auto' && roundActive) || showingAnswerReveal) && currentQuestion;
     const letters = ['A', 'B', 'C', 'D'];
 
     return (
@@ -1539,6 +1614,30 @@ export default function AdminDashboard() {
 
               <button className="btn btn-outline-danger" style={{ fontSize: 13, padding: '6px 13px', whiteSpace: 'nowrap' }} onClick={endGame}>
                 <Icons.Trophy size={14} /> <span>End Quiz</span>
+              </button>
+            </>
+          )}
+
+          {isCompleted && (
+            <>
+              <button
+                className="btn btn-primary"
+                style={{ fontSize: 13, padding: '6px 14px', fontWeight: 700, whiteSpace: 'nowrap' }}
+                onClick={handleExportCSV}
+                disabled={exportingCsv}
+                title="Download final results as CSV"
+              >
+                <Icons.Download size={14} />
+                <span>{exportingCsv ? 'Exporting...' : 'Export Results CSV'}</span>
+              </button>
+              <button
+                className="btn btn-secondary"
+                style={{ fontSize: 13, padding: '6px 14px', whiteSpace: 'nowrap' }}
+                onClick={restartQuiz}
+                title="Restart quiz from Round 1"
+              >
+                <Icons.Play size={14} />
+                <span>Restart Quiz</span>
               </button>
             </>
           )}
@@ -2195,13 +2294,14 @@ export default function AdminDashboard() {
                 <button className="btn btn-secondary btn-sm" onClick={getLeaderboard}>
                   <Icons.Refresh size={14} /> Refresh Standings
                 </button>
-                <a
-                  href={`${API_BASE}/api/leaderboard/export`}
+                <button
                   className="btn btn-secondary btn-sm"
-                  download
+                  onClick={handleExportCSV}
+                  disabled={exportingCsv}
+                  title="Download complete tournament results as CSV"
                 >
-                  <Icons.Download size={14} /> Export CSV
-                </a>
+                  <Icons.Download size={14} /> {exportingCsv ? 'Exporting...' : 'Export CSV'}
+                </button>
               </div>
             </div>
 

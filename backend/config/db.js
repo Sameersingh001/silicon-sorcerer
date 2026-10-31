@@ -19,6 +19,9 @@ const connectDB = async () => {
   if (!cached.promise) {
     cached.promise = mongoose.connect(uri, {
       serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+      maxPoolSize: 15,
+      family: 4,
     }).then((conn) => {
       console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
       return conn;
@@ -30,6 +33,9 @@ const connectDB = async () => {
         try {
           const localConn = await mongoose.connect('mongodb://localhost:27017/qr_quest', {
             serverSelectionTimeoutMS: 3000,
+            socketTimeoutMS: 45000,
+            maxPoolSize: 15,
+            family: 4,
           });
           console.log(`✅ Fallback connected to local MongoDB: ${localConn.connection.host}`);
           return localConn;
