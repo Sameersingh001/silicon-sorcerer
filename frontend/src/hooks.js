@@ -10,7 +10,17 @@ export function useToast() {
 }
 
 export function useCountdown(deadlineAt, serverTime) {
-  const [remaining, setRemaining] = useState(0);
+  const getRemaining = () => {
+    if (!deadlineAt) return 0;
+    const deadline = new Date(deadlineAt).getTime();
+    if (isNaN(deadline)) return 0;
+    const serverTimestamp = serverTime ? new Date(serverTime).getTime() : NaN;
+    const clientNow = Date.now();
+    const clockOffset = !isNaN(serverTimestamp) ? clientNow - serverTimestamp : 0;
+    return Math.max(0, deadline - (clientNow - clockOffset));
+  };
+
+  const [remaining, setRemaining] = useState(getRemaining);
 
   useEffect(() => {
     if (!deadlineAt) {

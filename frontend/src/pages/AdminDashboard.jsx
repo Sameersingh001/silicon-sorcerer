@@ -4,6 +4,7 @@ import { io } from 'socket.io-client';
 import {
   API_BASE, apiFetch, getAdminToken, clearAdminToken,
   rankIcon, fmtMs, statusColor, isCorrectOption, parseOptionContent,
+  playBuzzerSound, unlockAudio,
 } from '../utils';
 import { useToast, useCountdown } from '../hooks';
 import {
@@ -425,6 +426,73 @@ export default function AdminDashboard() {
   const [showingAnswerReveal, setShowingAnswerReveal] = useState(false);
   const revealTimerRef = useRef(null);
 
+  // ── Audio Buzzer for Question Time's Up ──────────────────────────
+  const hooterAudioRef = useRef(null);
+  const [buzzerEnabled, setBuzzerEnabled] = useState(() => {
+    return localStorage.getItem('admin_buzzer_enabled') !== 'false';
+  });
+  const buzzerEnabledRef = useRef(buzzerEnabled);
+  useEffect(() => {
+    buzzerEnabledRef.current = buzzerEnabled;
+  }, [buzzerEnabled]);
+
+  const lastBuzzerTimestampRef = useRef(0);
+
+  const currentQuestionRef = useRef(null);
+  useEffect(() => {
+    currentQuestionRef.current = currentQuestion;
+  }, [currentQuestion]);
+
+  // Dedicated automatic buzzer trigger (debounced by timestamp to strictly play once per timeout)
+  const triggerBuzzer = useCallback((roundNum) => {
+    if (!buzzerEnabledRef.current) {
+      console.log('🔇 KBC Hooter triggered but muted in settings');
+      return;
+    }
+    const now = Date.now();
+    // Debounce to strictly play once per timeout (ignore calls within 3.5 seconds)
+    if (now - lastBuzzerTimestampRef.current < 3500) {
+      console.log('⏩ Buzzer debounced (already sounded < 3.5s ago)');
+      return;
+    }
+    lastBuzzerTimestampRef.current = now;
+    console.log(`🚨🚨 AUTO-PLAYING KBC HOOTER for Round ${roundNum || 'timeout'} (Time is up)! 🚨🚨`);
+
+    // 1. Play embedded DOM audio element (unlocked by user click on Publish / Start Quiz)
+    if (hooterAudioRef.current) {
+      try {
+        hooterAudioRef.current.currentTime = 0;
+        hooterAudioRef.current.volume = 0.95;
+        hooterAudioRef.current.play().catch((err) => {
+          console.warn('DOM audio element play rejected:', err.message);
+        });
+      } catch (err) {
+        console.warn('DOM audio error:', err);
+      }
+    }
+
+    // 2. Play Web Audio synth + buffer engine (kept alive by startAudioKeepAlive)
+    unlockAudio();
+    playBuzzerSound();
+  }, []);
+
+  const toggleBuzzer = () => {
+    unlockAudio();
+    if (hooterAudioRef.current) {
+      hooterAudioRef.current.load();
+    }
+    const next = !buzzerEnabled;
+    setBuzzerEnabled(next);
+    buzzerEnabledRef.current = next;
+    localStorage.setItem('admin_buzzer_enabled', String(next));
+    if (next) {
+      playBuzzerSound();
+      showToast('KBC Hooter Sound: ON (Test Played)', 'success');
+    } else {
+      showToast('KBC Hooter Sound: MUTED', 'info');
+    }
+  };
+
   // Questions tab (Answers hidden)
   const [questions, setQuestions] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -459,11 +527,17 @@ export default function AdminDashboard() {
     activeServerTime
   );
 
-  // Current question ref to prevent stale closures
-  const currentQuestionRef = useRef(null);
+  // Track previous remaining time to accurately detect the exact moment timer drops to 0
+  const prevRemainingRef = useRef(0);
   useEffect(() => {
-    currentQuestionRef.current = currentQuestion;
-  }, [currentQuestion]);
+    const isRoundActive = gameState?.roundTimer?.roundStatus === 'active';
+    if (prevRemainingRef.current > 0 && remaining <= 0 && isRoundActive) {
+      const roundNum = currentQuestion?.roundNumber || gameState?.currentRoundNumber || 1;
+      console.log(`⏱️ Countdown reached 0 for Round ${roundNum}! Triggering KBC Hooter...`);
+      triggerBuzzer(roundNum);
+    }
+    prevRemainingRef.current = remaining;
+  }, [remaining, triggerBuzzer, currentQuestion?.roundNumber, gameState?.currentRoundNumber, gameState?.roundTimer?.roundStatus]);
 
   // ── Auth guard & initial load ────────────────────────────────────
   useEffect(() => {
@@ -576,6 +650,7 @@ export default function AdminDashboard() {
     });
 
     socket.on('question:admin', (q) => {
+      unlockAudio();
       if (revealTimerRef.current) {
         clearTimeout(revealTimerRef.current);
         revealTimerRef.current = null;
@@ -584,6 +659,9 @@ export default function AdminDashboard() {
       setShowingAnswerReveal(false);
       setSelectedDifficulty(null);
       setCurrentQuestion(q);
+      // Reset buzzer tracking for the new round
+      lastBuzzerRoundRef.current = null;
+      timerHasRunRef.current = false;
       setSubmissions([]);
       setRoundLeaderboard([]);
       setProjectorViewMode('question'); // Switch projector to question view
@@ -617,6 +695,8 @@ export default function AdminDashboard() {
 
     socket.on('round:closed', ({ roundNumber }) => {
       showToast(`Q${roundNumber} time is up! Closed.`, 'info');
+      console.log(`📡 Socket 'round:closed' received for Q${roundNumber}!`);
+      triggerBuzzer(roundNumber);
     });
 
     socket.on('question:answer_reveal', ({ correctAnswer }) => {
@@ -709,10 +789,15 @@ export default function AdminDashboard() {
   }, [showToast]);
 
   const startQuiz = () => {
+    unlockAudio();
     emit('admin:start_quiz');
     setIsProjectorMode(true);
   };
   const nextQuestion = () => {
+    unlockAudio();
+    if (hooterAudioRef.current) {
+      hooterAudioRef.current.load();
+    }
     if (socketRef.current?.connected) {
       socketRef.current.emit('admin:next_question', { difficulty: selectedDifficulty || null });
       setSelectedDifficulty(null);
@@ -722,7 +807,12 @@ export default function AdminDashboard() {
   };
   const pauseGame = () => emit('admin:pause');
   const resumeGame = () => emit('admin:resume');
-  const closeRound = () => emit('admin:close_round');
+  const closeRound = () => {
+    unlockAudio();
+    const roundNum = currentQuestion?.roundNumber || gameState?.currentRoundNumber || 1;
+    triggerBuzzer(roundNum);
+    emit('admin:close_round');
+  };
   const endGame = () => {
     if (!confirm('End the game for all participants?')) return;
     setShowingAnswerReveal(false);
@@ -1379,6 +1469,7 @@ export default function AdminDashboard() {
 
     return (
       <div className="projector-mode">
+        <audio ref={hooterAudioRef} src="/kbc-hooter.wav" preload="auto" style={{ display: 'none' }} />
         <Toast toast={toast} />
 
         {/* Top Minimal Bar */}
@@ -1404,6 +1495,15 @@ export default function AdminDashboard() {
             >
               {showQuestionView ? <Icons.Trophy size={14} /> : <Icons.HelpCircle size={14} />}
               <span>{showQuestionView ? 'Show Leaderboard' : 'Show Question'}</span>
+            </button>
+            <button
+              className={`btn btn-sm ${buzzerEnabled ? 'btn-secondary' : 'btn-outline-danger'}`}
+              style={{ fontSize: 13, padding: '5px 12px' }}
+              onClick={toggleBuzzer}
+              title={buzzerEnabled ? 'KBC Hooter active on time-up (Click to mute)' : 'KBC Hooter muted (Click to enable)'}
+            >
+              {buzzerEnabled ? <Icons.Volume2 size={14} color="#10b981" /> : <Icons.VolumeX size={14} color="#ef4444" />}
+              <span>{buzzerEnabled ? 'KBC Hooter ON' : 'Hooter Muted'}</span>
             </button>
             <button className="btn btn-secondary btn-sm" style={{ fontSize: 13, padding: '5px 12px' }} onClick={toggleProjectorMode} title="Exit Fullscreen Projector">
               <Icons.XCircle size={14} />
@@ -1655,6 +1755,7 @@ export default function AdminDashboard() {
   // ═════════════════════════════════════════════════════════════════
   return (
     <div className="dashboard-page">
+      <audio ref={hooterAudioRef} src="/kbc-hooter.wav" preload="auto" style={{ display: 'none' }} />
       <Toast toast={toast} />
 
       {/* Big QR Code Modal ("open krkr bada bada dikhao") */}
@@ -1711,6 +1812,17 @@ export default function AdminDashboard() {
             >
               {qrLoading ? <Spinner size="sm" /> : <Icons.QrCode size={16} />}
               <span>Large QR Code</span>
+            </button>
+
+            {/* Buzzer Sound Toggle */}
+            <button
+              id="btn-toggle-buzzer"
+              className={`btn btn-sm ${buzzerEnabled ? 'btn-secondary' : 'btn-outline-danger'}`}
+              onClick={toggleBuzzer}
+              title={buzzerEnabled ? 'KBC Hooter active on time-up (Click to mute)' : 'KBC Hooter muted (Click to enable)'}
+            >
+              {buzzerEnabled ? <Icons.Volume2 size={15} color="#10b981" /> : <Icons.VolumeX size={15} color="#ef4444" />}
+              <span>{buzzerEnabled ? 'KBC Hooter ON' : 'Hooter Muted'}</span>
             </button>
 
             <button className="btn btn-secondary btn-sm" onClick={handleLogout}>
