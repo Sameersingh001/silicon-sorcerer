@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import {
   API_BASE, apiFetch, getAdminToken, clearAdminToken,
@@ -516,6 +516,14 @@ export default function AdminDashboard() {
   // Selected difficulty override
   const [selectedDifficulty, setSelectedDifficulty] = useState(null);
 
+  // Results CSV Drop & Publish state (Admin controls only)
+  const [droppedResults, setDroppedResults] = useState([]);
+  const [droppedResultsFileName, setDroppedResultsFileName] = useState('');
+  const [publishingResults, setPublishingResults] = useState(false);
+  const [isDraggingResults, setIsDraggingResults] = useState(false);
+  const [isCustomResultsPublished, setIsCustomResultsPublished] = useState(false);
+  const resultsFileInputRef = useRef(null);
+
   // Timer countdown with accurate server timestamp synchronization (no delay/desync)
   const activeDeadline = gameState?.roundTimer?.roundStatus === 'active'
     ? gameState?.roundTimer?.deadlineAt
@@ -556,10 +564,14 @@ export default function AdminDashboard() {
         if (evData.success) {
           setEvent(evData.event);
           setStats((prev) => ({ ...prev, participantCount: evData.event.participantCount || 0 }));
-          if (evData.event.status === 'completed') {
+          if (Array.isArray(evData.event.publishedResults) && evData.event.publishedResults.length > 0) {
+            setIsCustomResultsPublished(true);
+            setFinalLeaderboard(evData.event.publishedResults);
+          } else if (evData.event.status === 'completed') {
             apiFetch('/api/leaderboard/final').then((lbRes) => {
               if (lbRes.success && lbRes.leaderboard) {
                 setFinalLeaderboard(lbRes.leaderboard);
+                if (lbRes.isCustom) setIsCustomResultsPublished(true);
                 setProjectorViewMode('leaderboard');
               }
             });
@@ -599,7 +611,7 @@ export default function AdminDashboard() {
     if (!token) return;
 
     const socket = io(API_BASE, {
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
@@ -857,6 +869,186 @@ export default function AdminDashboard() {
     } finally {
       setExportingCsv(false);
     }
+  };
+
+  // ── Results CSV Parsing & Drop Handlers (Admin Only) ───────────────
+  const parseCSVLine = (line) => {
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  };
+
+  const parseResultsCSV = (csvText) => {
+    const cleanText = csvText.replace(/^\uFEFF/, '').trim();
+    const rawLines = cleanText.split(/\r\n|\n|\r/).filter((l) => l.trim().length > 0);
+    if (rawLines.length < 2) {
+      throw new Error('CSV file is empty or missing data rows');
+    }
+
+    const headerLine = rawLines[0];
+    const headers = parseCSVLine(headerLine).map((h) => h.toLowerCase().replace(/['"]/g, '').trim());
+
+    let rankIdx = headers.findIndex((h) => /^rank$/i.test(h));
+    let idIdx = headers.findIndex((h) => /^(participant\s*id|roll\s*no|reg\s*no|id)$/i.test(h));
+    let nameIdx = headers.findIndex((h) => /^(participant\s*name|student\s*name|full\s*name|name)$/i.test(h));
+    let courseIdx = headers.findIndex((h) => /^(course|branch|dept|department|stream)$/i.test(h));
+    let scoreIdx = headers.findIndex((h) => /^(total\s*score|score|points|total\s*points)$/i.test(h));
+    let correctIdx = headers.findIndex((h) => /^(correct\s*answers?|correct|accuracy|correct\s*count)$/i.test(h));
+    let secIdx = headers.findIndex((h) => /^(total\s*response\s*time\s*\(s\)|response\s*time\s*\(s\)|time\s*\(s\)|seconds)$/i.test(h));
+    let msIdx = headers.findIndex((h) => /^(total\s*response\s*time\s*\(ms\)|response\s*time\s*\(ms\)|time\s*\(ms\)|milliseconds)$/i.test(h));
+
+    if (rankIdx === -1 && headers.length >= 8) rankIdx = 0;
+    if (idIdx === -1 && headers.length >= 8) idIdx = 1;
+    if (nameIdx === -1 && headers.length >= 8) nameIdx = 2;
+    if (courseIdx === -1 && headers.length >= 8) courseIdx = 3;
+    if (scoreIdx === -1 && headers.length >= 8) scoreIdx = 4;
+    if (correctIdx === -1 && headers.length >= 8) correctIdx = 5;
+    if (secIdx === -1 && headers.length >= 8) secIdx = 6;
+    if (msIdx === -1 && headers.length >= 8) msIdx = 7;
+
+    const parsedRows = [];
+    for (let i = 1; i < rawLines.length; i++) {
+      const cols = parseCSVLine(rawLines[i]);
+      if (cols.length === 0 || cols.every((c) => !c)) continue;
+
+      const rank = rankIdx !== -1 && cols[rankIdx] ? parseInt(cols[rankIdx], 10) : i;
+      const participantId = idIdx !== -1 && cols[idIdx] ? cols[idIdx] : `P-${i}`;
+      const fullName = nameIdx !== -1 && cols[nameIdx] ? cols[nameIdx] : `Contender ${i}`;
+      const course = courseIdx !== -1 && cols[courseIdx] ? cols[courseIdx] : '';
+      const totalScore = scoreIdx !== -1 && cols[scoreIdx] ? parseFloat(cols[scoreIdx]) || 0 : 0;
+      const correctCount = correctIdx !== -1 && cols[correctIdx] ? parseInt(cols[correctIdx], 10) || 0 : 0;
+
+      let sec = secIdx !== -1 && cols[secIdx] ? parseFloat(cols[secIdx]) : null;
+      let ms = msIdx !== -1 && cols[msIdx] ? parseInt(cols[msIdx], 10) : null;
+
+      if (sec != null && ms == null) {
+        ms = Math.round(sec * 1000);
+      } else if (ms != null && sec == null) {
+        sec = parseFloat((ms / 1000).toFixed(2));
+      } else if (sec == null && ms == null) {
+        sec = 0;
+        ms = 0;
+      }
+
+      parsedRows.push({
+        rank: isNaN(rank) ? i : rank,
+        participantId: String(participantId).trim(),
+        fullName: String(fullName).trim(),
+        course: String(course).trim(),
+        totalScore,
+        correctCount,
+        totalResponseTimeSec: sec,
+        totalResponseTimeMs: ms,
+      });
+    }
+
+    if (parsedRows.length === 0) {
+      throw new Error('No valid participant rows found in CSV');
+    }
+
+    return parsedRows.sort((a, b) => a.rank - b.rank);
+  };
+
+  const handleProcessResultsFile = (file) => {
+    if (!file) return;
+    if (!file.name.endsWith('.csv') && file.type !== 'text/csv') {
+      showToast('Please upload a valid .csv file', 'error');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target.result;
+        const parsed = parseResultsCSV(text);
+        setDroppedResults(parsed);
+        setDroppedResultsFileName(file.name);
+        showToast(`Parsed ${parsed.length} participant records from ${file.name}. Ready to publish!`, 'success');
+      } catch (err) {
+        showToast(`CSV error: ${err.message}`, 'error');
+      }
+    };
+    reader.onerror = () => showToast('Error reading file', 'error');
+    reader.readAsText(file);
+  };
+
+  const handlePublishDroppedResults = async () => {
+    if (droppedResults.length === 0) {
+      showToast('No parsed results to publish', 'warning');
+      return;
+    }
+    setPublishingResults(true);
+    try {
+      const res = await apiFetch('/api/leaderboard/publish', {
+        method: 'POST',
+        body: JSON.stringify({ results: droppedResults }),
+      });
+      if (res.success) {
+        showToast(`🎉 Published ${res.count || droppedResults.length} standings to Student Portal (/results)!`, 'success');
+        setFinalLeaderboard(res.leaderboard || droppedResults);
+        setIsCustomResultsPublished(true);
+        setDroppedResults([]);
+        setDroppedResultsFileName('');
+      } else {
+        throw new Error(res.message || 'Publish failed');
+      }
+    } catch (err) {
+      showToast(`Publish error: ${err.message}`, 'error');
+    } finally {
+      setPublishingResults(false);
+    }
+  };
+
+  const handleRevertResults = async () => {
+    if (!window.confirm('Revert to automated live quiz leaderboard? The custom sheet will be cleared.')) {
+      return;
+    }
+    try {
+      const res = await apiFetch('/api/leaderboard/publish', {
+        method: 'DELETE',
+      });
+      if (res.success) {
+        showToast('Reverted to live automated quiz results', 'info');
+        setIsCustomResultsPublished(false);
+        setDroppedResults([]);
+        setDroppedResultsFileName('');
+        getLeaderboard();
+      }
+    } catch (err) {
+      showToast(`Revert failed: ${err.message}`, 'error');
+    }
+  };
+
+  const handleDownloadResultsTemplate = () => {
+    const header = 'Rank,Participant ID,Participant Name,Course,Total Score,Correct Answers,Total Response Time (s),Total Response Time (ms)\r\n';
+    const sample = '1,P-101,Aarav Sharma,B.Tech CSE,1200,10,14.50,14500\r\n2,P-102,Priya Patel,BCA,1150,9,16.80,16800\r\n3,P-103,Rohan Verma,MCA,980,8,21.10,21100\r\n';
+    const blob = new Blob(['\uFEFF' + header + sample], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'student-results-template.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showToast('Downloaded sample results template CSV', 'success');
   };
   const getLeaderboard = () => emit('admin:get_leaderboard');
   const revealAnswer = () => emit('admin:reveal_answer');
@@ -1804,6 +1996,17 @@ export default function AdminDashboard() {
               <span>Projector Arena Mode</span>
             </button>
 
+            {/* Public Student Results Page */}
+            <Link
+              to="/results"
+              target="_blank"
+              className="btn btn-secondary btn-sm"
+              title="Open Public Student Results Page in new tab"
+            >
+              <Icons.Trophy size={15} color="#f59e0b" />
+              <span>Results Page</span>
+            </Link>
+
             <button
               id="btn-open-big-qr"
               className="btn btn-secondary btn-sm"
@@ -2389,6 +2592,280 @@ export default function AdminDashboard() {
             onRefresh={getLeaderboard}
             onLaunchProjector={toggleProjectorMode}
           />
+
+          {/* ── Drop & Publish Result Sheet Card (Admin Only) ── */}
+          <div className="glass-card" style={{ padding: 24, marginBottom: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14, marginBottom: 16 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                  <Icons.FileSpreadsheet size={22} color="var(--clr-primary)" />
+                  <h2 style={{ fontSize: 18, margin: 0, fontWeight: 800 }}>
+                    Drop & Publish Result Sheet for Students
+                  </h2>
+                  <span className="badge badge-info" style={{ fontSize: 11, fontWeight: 700 }}>
+                    Admin Only
+                  </span>
+                  {isCustomResultsPublished && (
+                    <span className="badge badge-success" style={{ fontSize: 11, fontWeight: 700 }}>
+                      ✓ Custom Sheet Active
+                    </span>
+                  )}
+                </div>
+                <p style={{ fontSize: 13, color: 'var(--clr-text)', margin: 0, maxWidth: 680 }}>
+                  Drop or upload an official tournament CSV file here to publish final standings directly to the public student portal (<code style={{ color: 'var(--clr-primary)', fontWeight: 600 }}>/results</code>). Students cannot edit, drop, or manipulate results.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleDownloadResultsTemplate}
+                  title="Download standard 8-column sample template CSV"
+                >
+                  <Icons.Download size={14} /> Sample Template
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleExportCSV}
+                  disabled={exportingCsv}
+                  title="Download current tournament standings as CSV"
+                >
+                  <Icons.Download size={14} /> {exportingCsv ? 'Exporting...' : 'Export Current CSV'}
+                </button>
+                <a
+                  href="/results"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn btn-secondary btn-sm"
+                  style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                  title="Open student results portal in new tab"
+                >
+                  <Icons.ExternalLink size={14} /> View Student Portal
+                </a>
+              </div>
+            </div>
+
+            {/* Expected 8 Columns Format Pill Box */}
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid var(--clr-border)',
+              borderRadius: 'var(--radius-md)',
+              padding: '10px 14px',
+              marginBottom: 16,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              flexWrap: 'wrap',
+            }}>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--clr-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Required Columns:
+              </span>
+              {[
+                'Rank',
+                'Participant ID',
+                'Participant Name',
+                'Course',
+                'Total Score',
+                'Correct Answers',
+                'Total Response Time (s)',
+                'Total Response Time (ms)',
+              ].map((col) => (
+                <span
+                  key={col}
+                  style={{
+                    fontSize: 11.5,
+                    padding: '2px 8px',
+                    borderRadius: 6,
+                    background: 'rgba(79, 70, 229, 0.1)',
+                    border: '1px solid rgba(79, 70, 229, 0.25)',
+                    color: 'var(--clr-primary)',
+                    fontFamily: 'monospace',
+                    fontWeight: 600,
+                  }}
+                >
+                  {col}
+                </span>
+              ))}
+            </div>
+
+            {/* Drag & Drop Zone */}
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDraggingResults(true);
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                setIsDraggingResults(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDraggingResults(false);
+                const file = e.dataTransfer?.files?.[0];
+                if (file) handleProcessResultsFile(file);
+              }}
+              onClick={() => resultsFileInputRef.current?.click()}
+              style={{
+                border: isDraggingResults ? '2px dashed #4f46e5' : '2px dashed var(--clr-border)',
+                background: isDraggingResults ? 'rgba(79, 70, 229, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                borderRadius: 'var(--radius-lg)',
+                padding: '28px 20px',
+                textAlign: 'center',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <input
+                ref={resultsFileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleProcessResultsFile(file);
+                  e.target.value = '';
+                }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}>
+                <div style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: '50%',
+                  background: isDraggingResults ? 'rgba(79, 70, 229, 0.2)' : 'rgba(255, 255, 255, 0.06)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: isDraggingResults ? '#818cf8' : 'var(--clr-text-muted)',
+                }}>
+                  <Icons.Upload size={24} />
+                </div>
+              </div>
+              <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 4px', color: 'var(--clr-text-heading)' }}>
+                {isDraggingResults ? 'Drop CSV File Here' : 'Drag & Drop Result CSV here, or Browse File'}
+              </h3>
+              <p style={{ fontSize: 12.5, color: 'var(--clr-text-muted)', margin: 0 }}>
+                Upload .csv file with student ranks, IDs, scores, and response times
+              </p>
+            </div>
+
+            {/* Staged Dropped Results Preview & Publish Controls */}
+            {droppedResults.length > 0 && (
+              <div style={{
+                marginTop: 16,
+                padding: 16,
+                background: 'rgba(79, 70, 229, 0.06)',
+                border: '1px solid rgba(79, 70, 229, 0.3)',
+                borderRadius: 'var(--radius-md)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+                  <div>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--clr-text-heading)' }}>
+                      📄 {droppedResultsFileName}
+                    </span>
+                    <span style={{ fontSize: 12.5, color: 'var(--clr-primary)', marginLeft: 10, fontWeight: 700 }}>
+                      ({droppedResults.length} Contenders Ready to Publish)
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => {
+                        setDroppedResults([]);
+                        setDroppedResultsFileName('');
+                      }}
+                      disabled={publishingResults}
+                    >
+                      ✕ Clear
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={handlePublishDroppedResults}
+                      disabled={publishingResults}
+                      style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', border: 'none' }}
+                    >
+                      {publishingResults ? <Spinner size="sm" /> : <Icons.Upload size={14} />}
+                      <span>{publishingResults ? 'Publishing...' : '💾 Publish to /results Portal'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Quick 3-Row Preview Table */}
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="modern-table" style={{ fontSize: 12 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ width: 60 }}>Rank</th>
+                        <th>Participant ID</th>
+                        <th>Participant Name</th>
+                        <th>Course</th>
+                        <th>Score</th>
+                        <th>Correct</th>
+                        <th>Time (s)</th>
+                        <th>Time (ms)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {droppedResults.slice(0, 3).map((r, i) => (
+                        <tr key={r.participantId || i}>
+                          <td><strong>#{r.rank}</strong></td>
+                          <td><code>{r.participantId}</code></td>
+                          <td><strong>{r.fullName}</strong></td>
+                          <td>{r.course || '—'}</td>
+                          <td>{r.totalScore}</td>
+                          <td>{r.correctCount}</td>
+                          <td>{r.totalResponseTimeSec}s</td>
+                          <td>{r.totalResponseTimeMs}ms</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {droppedResults.length > 3 && (
+                    <p style={{ fontSize: 11.5, color: 'var(--clr-text-muted)', margin: '8px 0 0', textAlign: 'center' }}>
+                      + {droppedResults.length - 3} more contenders will be published
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Custom Published Active Notice & Revert Option */}
+            {isCustomResultsPublished && droppedResults.length === 0 && (
+              <div style={{
+                marginTop: 16,
+                padding: '12px 16px',
+                background: 'rgba(16, 185, 129, 0.08)',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                borderRadius: 'var(--radius-md)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 12,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Icons.Trophy size={18} color="#10b981" />
+                  <span style={{ fontSize: 13, color: '#10b981', fontWeight: 600 }}>
+                    Official CSV Result Sheet is currently <strong>Active & Published</strong> on the student portal.
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleRevertResults}
+                  style={{ color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }}
+                  title="Remove uploaded sheet and calculate standings directly from database submissions"
+                >
+                  <Icons.RotateCcw size={13} /> Revert to Live Quiz Data
+                </button>
+              </div>
+            )}
+          </div>
 
           <div className="glass-card" style={{ padding: 24 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>

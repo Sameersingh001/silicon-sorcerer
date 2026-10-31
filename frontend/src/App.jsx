@@ -4,6 +4,7 @@ import RegisterPage from './pages/RegisterPage';
 import GamePage from './pages/GamePage';
 import AdminLoginPage from './pages/AdminLoginPage';
 import AdminDashboard from './pages/AdminDashboard';
+import ResultsPage from './pages/ResultsPage';
 import './index.css';
 
 function App() {
@@ -13,6 +14,10 @@ function App() {
         {/* Landing & Information */}
         <Route path="/" element={<HomePage />} />
         <Route path="/home" element={<HomePage />} />
+
+        {/* Results for Students */}
+        <Route path="/results" element={<ResultsPage />} />
+        <Route path="/result" element={<ResultsPage />} />
 
         {/* Participant routes */}
         <Route path="/register" element={<RegisterPage />} />

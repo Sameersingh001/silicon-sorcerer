@@ -49,6 +49,19 @@ const eventSchema = new mongoose.Schema({
       default: 'idle',
     },
   },
+  // Custom published / dropped results list
+  publishedResults: [
+    {
+      rank: { type: Number, default: 0 },
+      participantId: { type: String, default: '' },
+      fullName: { type: String, default: '' },
+      course: { type: String, default: '' },
+      totalScore: { type: Number, default: 0 },
+      correctCount: { type: Number, default: 0 },
+      totalResponseTimeSec: { type: Number, default: 0 },
+      totalResponseTimeMs: { type: Number, default: 0 },
+    },
+  ],
   createdAt: {
     type: Date,
     default: Date.now,

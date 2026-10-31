@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { API_BASE, getParticipantSession, clearParticipantSession, apiFetch, fmtMs, parseOptionContent, isImageUrl } from '../utils';
 import { useToast, useCountdown } from '../hooks';
@@ -228,7 +228,7 @@ export default function GamePage() {
     if (!session?.sessionToken) return;
 
     const socket = io(API_BASE, {
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
@@ -1061,6 +1061,34 @@ export default function GamePage() {
           <span className={`status-dot ${connected ? 'live' : 'paused'}`} />
           <span>{connected ? 'Live Connected to Host Server' : 'Reconnecting...'}</span>
         </div>
+
+        {/* View Official Results Button */}
+        {phase === PHASE.COMPLETED && (
+          <div style={{ marginTop: 22 }}>
+            <Link
+              to="/results"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                color: '#ffffff',
+                padding: '12px 24px',
+                borderRadius: 14,
+                fontSize: 15,
+                fontWeight: 800,
+                textDecoration: 'none',
+                boxShadow: '0 6px 20px rgba(245, 158, 11, 0.4)',
+                width: '100%',
+                justifyContent: 'center',
+                boxSizing: 'border-box',
+              }}
+            >
+              <Icons.Trophy size={18} />
+              <span>View Full Tournament Standings</span>
+            </Link>
+          </div>
+        )}
 
         {/* iPhone Fullscreen Helper Tip */}
         {isIOS && !isStandalone && (

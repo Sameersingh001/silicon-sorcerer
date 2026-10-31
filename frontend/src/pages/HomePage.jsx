@@ -105,6 +105,13 @@ export default function HomePage() {
               {tab}
             </button>
           ))}
+          <Link
+            to="/results"
+            className="ppt-tab"
+            style={{ textDecoration: 'none', color: '#fbbf24', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+          >
+            🏆 Results
+          </Link>
         </nav>
       </header>
 
